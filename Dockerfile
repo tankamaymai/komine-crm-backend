@@ -5,6 +5,13 @@ FROM node:20-alpine AS types
 
 RUN apk add --no-cache git
 
+# npm レジストリ fetch の ECONNRESET flake を指数バックオフで吸収する（#381）。
+# 既定の fetch-retries=2 では CI の Docker ビルドが稀に転送リセットで落ちるため強化。
+ENV npm_config_fetch_retries=5 \
+    npm_config_fetch_retry_factor=4 \
+    npm_config_fetch_retry_mintimeout=20000 \
+    npm_config_fetch_retry_maxtimeout=120000
+
 WORKDIR /packages/types
 
 # TYPES_REF: ビルドする @komine/types の git ref (commit SHA 固定)
@@ -33,7 +40,12 @@ WORKDIR /app
 # フラグ指定だと後続の `npm install` が symlink に戻してしまうため、
 # 環境変数で全 npm 実行に適用して一貫性を確保する。
 # 詳細: zaitsu82/komine-crm-backend#60
-ENV npm_config_install_links=true
+# npm_config_fetch_retry_*: レジストリ fetch の ECONNRESET flake を吸収（#381）
+ENV npm_config_install_links=true \
+    npm_config_fetch_retries=5 \
+    npm_config_fetch_retry_factor=4 \
+    npm_config_fetch_retry_mintimeout=20000 \
+    npm_config_fetch_retry_maxtimeout=120000
 
 # @komine/types パッケージを配置（file:../packages/types の解決用）
 COPY --from=types /packages/types /packages/types
@@ -63,7 +75,12 @@ RUN apk add --no-cache git
 WORKDIR /app
 
 # file:依存（@komine/types）を常に実体コピーで解決（deps ステージと同じ）
-ENV npm_config_install_links=true
+# npm_config_fetch_retry_*: レジストリ fetch の ECONNRESET flake を吸収（#381）
+ENV npm_config_install_links=true \
+    npm_config_fetch_retries=5 \
+    npm_config_fetch_retry_factor=4 \
+    npm_config_fetch_retry_mintimeout=20000 \
+    npm_config_fetch_retry_maxtimeout=120000
 
 # @komine/types パッケージを配置（file:../packages/types の解決用）
 COPY --from=types /packages/types /packages/types
