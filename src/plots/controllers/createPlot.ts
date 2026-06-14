@@ -29,6 +29,7 @@ import {
 } from '../../collective-burials/utils';
 import prisma from '../../db/prisma';
 import { ValidationError, NotFoundError } from '../../middleware/errorHandler';
+import { assertAssignableCustomer } from '../services/assertAssignableCustomer';
 import {
   recordContractPlotCreated,
   recordCustomerCreated,
@@ -225,6 +226,11 @@ export async function createPlotCore(
   const createdRoles: { id: string; role: string; customer_id: string }[] = [];
   if (input.saleContract.roles && input.saleContract.roles.length > 0) {
     for (const roleData of input.saleContract.roles) {
+      // 既存顧客を指定した場合は解約者・論理削除顧客を契約者にできないようガード（#394）。
+      // customerId 未指定時はこの作成で生成した customer を使うため検証不要。
+      if (roleData.customerId) {
+        await assertAssignableCustomer(tx, roleData.customerId);
+      }
       const created = await tx.saleContractRole.create({
         data: {
           contract_plot_id: contractPlot.id,

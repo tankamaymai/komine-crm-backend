@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import prisma from '../db/prisma';
 import { getRequestLogger, logger } from '../utils/logger';
+import { isRateLimitError } from './isRateLimitError';
 
 // Cookie設定の定数
 // secure/sameSite は NODE_ENV ではなく実際の提供スキームに連動させる（#299）。
@@ -758,10 +759,7 @@ export const forgotPassword = async (req: Request, res: Response) => {
       // （実例: "For security purposes, you can only request this after N seconds."）、
       // 旧来の message.includes('rate limit') ではこの文言を取りこぼして「送信成功」を
       // 偽装していた（実際は1通も送られない）。status と文言の両方で判定する。
-      const isRateLimited =
-        error.status === 429 ||
-        /rate limit|you can only request this|too many requests/i.test(error.message);
-      if (isRateLimited) {
+      if (isRateLimitError(error)) {
         return res.status(429).json({
           success: false,
           error: {

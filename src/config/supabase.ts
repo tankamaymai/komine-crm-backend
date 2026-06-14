@@ -4,6 +4,8 @@
  */
 import { createClient, SupabaseClient, User } from '@supabase/supabase-js';
 
+import { isRateLimitError } from '../auth/isRateLimitError';
+
 // 環境変数
 const supabaseUrl = process.env['SUPABASE_URL'] || '';
 const supabaseServiceKey = process.env['SUPABASE_SERVICE_ROLE_KEY'] || '';
@@ -99,7 +101,7 @@ export const createSupabaseUser = async (
       if (error.message.includes('already registered')) {
         errorMessage = 'このメールアドレスは既にSupabaseに登録されています';
         errorCode = 'already_registered';
-      } else if (error.message.includes('rate limit')) {
+      } else if (isRateLimitError(error)) {
         errorMessage = '招待メールの送信制限に達しました。しばらく待ってから再試行してください';
         errorCode = 'rate_limit';
       }
@@ -290,7 +292,7 @@ export const resendInvitation = async (
       if (error.message.includes('already registered')) {
         errorMessage = 'このメールアドレスは既にSupabaseに登録されています';
         errorCode = 'already_registered';
-      } else if (error.message.includes('rate limit')) {
+      } else if (isRateLimitError(error)) {
         errorMessage = '招待メールの送信制限に達しました。しばらく待ってから再試行してください';
         errorCode = 'rate_limit';
       }
@@ -344,7 +346,7 @@ export const sendPasswordReset = async (
     if (error) {
       let errorMessage = error.message;
       let errorCode: InviteUserResult['errorCode'];
-      if (error.message.includes('rate limit')) {
+      if (isRateLimitError(error)) {
         errorMessage =
           'パスワード再設定メールの送信制限に達しました。しばらく待ってから再試行してください';
         errorCode = 'rate_limit';

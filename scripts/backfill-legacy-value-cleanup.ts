@@ -8,6 +8,7 @@
  *     さらに #355 backfill が本番に残した旧センチネル 'unknown' を空文字へ補正（#375）。
  *  3. buried_persons.religion = 'legacy-shuuha-*' → null（宗派マスタ不要確定）
  *  4. construction_infos.contractor = 'legacy-gyousha-0'（=未設定）→ null + 業者マスタ無効化（#334）
+ *  5. buried_persons.chief_mourner_relationship = 'legacy-zokugara-*' → 続柄マスタ名 or null（#394）
  *
  * いずれもアプリ作成データには影響しない（0/センチネル/生int は移行由来のみ）。
  *
@@ -120,6 +121,45 @@ async function backfillGyousha(): Promise<Record<string, number>> {
   };
 }
 
+async function backfillChiefMournerRelationship(): Promise<Record<string, unknown>> {
+  // step08（旧版）が書き込んだ buried_persons.chief_mourner_relationship の
+  // 'legacy-zokugara-${moshu_zokugara}' センチネルを続柄マスタ名へ解決する（#394）。
+  // family_contacts.relationship と同じ resolver を共有。未解決/'0' は空文字 → nullable 列なので null へ。
+  const SENTINEL_PREFIX = 'legacy-zokugara-';
+  const nameMap = await loadRelationshipNameMap(prisma);
+
+  const groups = await prisma.buriedPerson.groupBy({
+    by: ['chief_mourner_relationship'],
+    where: { chief_mourner_relationship: { startsWith: SENTINEL_PREFIX } },
+    _count: { _all: true },
+  });
+
+  const plan = groups.map((g) => {
+    const from = g.chief_mourner_relationship!; // where 句で非null確定
+    const rawCode = from.slice(SENTINEL_PREFIX.length); // 'legacy-zokugara-13' → '13'
+    const resolved = resolveRelationship(rawCode, nameMap);
+    return {
+      from,
+      to: resolved === UNRESOLVED_RELATIONSHIP ? null : resolved,
+      count: g._count._all,
+    };
+  });
+
+  if (!APPLY) {
+    return { chief_mourner_relationship_groups: plan };
+  }
+
+  let updated = 0;
+  for (const p of plan) {
+    const r = await prisma.buriedPerson.updateMany({
+      where: { chief_mourner_relationship: p.from },
+      data: { chief_mourner_relationship: p.to },
+    });
+    updated += r.count;
+  }
+  return { updated, plan };
+}
+
 async function main(): Promise<void> {
   console.log(`[backfill legacy-value-cleanup] start (apply=${APPLY})`);
 
@@ -127,9 +167,21 @@ async function main(): Promise<void> {
   const relationship = await backfillRelationship();
   const religion = await backfillReligion();
   const gyousha = await backfillGyousha();
+  const chiefMournerRelationship = await backfillChiefMournerRelationship();
 
   console.log(
-    JSON.stringify({ apply: APPLY, directionPosition, relationship, religion, gyousha }, null, 2)
+    JSON.stringify(
+      {
+        apply: APPLY,
+        directionPosition,
+        relationship,
+        religion,
+        gyousha,
+        chiefMournerRelationship,
+      },
+      null,
+      2
+    )
   );
 }
 

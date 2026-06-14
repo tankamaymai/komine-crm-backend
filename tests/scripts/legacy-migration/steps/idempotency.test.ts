@@ -97,6 +97,8 @@ describe('移行ステップの冪等性 (#220)', () => {
         create: buriedPersonCreate,
         findUnique: jest.fn().mockResolvedValue({ id: 'bp-existing', legacy_maisou_cd: 7 }),
       },
+      // step08 は喪主続柄を続柄マスタ名へ解決するため findMany を参照する（#394）
+      relationshipMaster: { findMany: jest.fn().mockResolvedValue([]) },
     } as unknown as PrismaClient;
 
     mockedLegacyQuery.mockResolvedValueOnce([

@@ -46,6 +46,7 @@ const mockPrisma: any = {
   customer: {
     create: jest.fn(),
     update: jest.fn(),
+    findUnique: jest.fn(),
   },
   workInfo: {
     create: jest.fn(),
@@ -233,6 +234,13 @@ describe('Plot Controller (ContractPlot Model)', () => {
     mockPrisma.$transaction.mockImplementation((callback: any) =>
       Promise.resolve(callback(mockPrisma))
     );
+    // roles 入替/作成経路の assertAssignableCustomer ガード（#394）はデフォルトで
+    // 割り当て可能な顧客（論理削除なし・未解約）を返す。拒否ケースは個別テストで上書き。
+    mockPrisma.customer.findUnique.mockResolvedValue({
+      id: 'c-assignable',
+      deleted_at: null,
+      is_terminated: false,
+    });
   });
 
   describe('getPlots', () => {
@@ -1761,6 +1769,49 @@ describe('Plot Controller (ContractPlot Model)', () => {
       );
       expect(mockPrisma.saleContractRole.create).toHaveBeenCalledTimes(2);
       expect(mockNext).not.toHaveBeenCalled();
+    });
+
+    it('roles 入替で解約済み顧客を契約者指定すると拒否し role を作成しない (#394)', async () => {
+      const mockExistingPlot = {
+        id: 'cp1',
+        physical_plot_id: 'pp1',
+        contract_area_sqm: new Prisma.Decimal(3.6),
+        physicalPlot: { id: 'pp1', area_sqm: new Prisma.Decimal(7.2) },
+        saleContractRoles: [
+          {
+            id: 'scr1',
+            role: 'contractor',
+            customer: { id: 'c1', workInfo: null },
+            customer_id: 'c1',
+            deleted_at: null,
+          },
+        ],
+        usageFee: null,
+        managementFee: null,
+      };
+
+      mockPrisma.contractPlot.findUnique.mockResolvedValue(mockExistingPlot);
+      mockPrisma.contractPlot.findMany.mockResolvedValue([]);
+      mockPrisma.saleContractRole.findMany.mockResolvedValue([]);
+      mockPrisma.saleContractRole.updateMany.mockResolvedValue({ count: 0 });
+      // 指定 customerId は解約済み（is_terminated）→ assertAssignableCustomer が拒否する
+      mockPrisma.customer.findUnique.mockResolvedValue({
+        id: 'terminated-1',
+        deleted_at: null,
+        is_terminated: true,
+      });
+
+      mockRequest.params = { id: 'cp1' };
+      mockRequest.body = {
+        saleContract: {
+          roles: [{ role: 'contractor', customerId: 'terminated-1' }],
+        },
+      };
+
+      await updatePlot(mockRequest as Request, mockResponse as Response, mockNext);
+
+      expect(mockNext).toHaveBeenCalledWith(expect.any(Error));
+      expect(mockPrisma.saleContractRole.create).not.toHaveBeenCalled();
     });
   });
 

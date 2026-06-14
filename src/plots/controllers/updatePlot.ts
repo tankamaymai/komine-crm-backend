@@ -31,6 +31,7 @@ import {
   updateCollectiveBurialCount,
   resolveBillingScheduledDate,
 } from '../../collective-burials/utils';
+import { assertAssignableCustomer } from '../services/assertAssignableCustomer';
 
 type Tx = Prisma.TransactionClient;
 
@@ -274,6 +275,8 @@ export async function updatePlotCore(
       if (!roleData.customerId) {
         throw new ValidationError('役割更新時は customerId が必須です');
       }
+      // 解約者・論理削除顧客を契約者にできないようガード（changeContractor と同一不変条件・#394）
+      await assertAssignableCustomer(tx, roleData.customerId);
 
       const created = await tx.saleContractRole.create({
         data: {

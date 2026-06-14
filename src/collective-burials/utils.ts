@@ -106,6 +106,10 @@ export const getBillingTargets = async (prisma: PrismaClient) => {
         lte: today, // 請求予定日が今日以前
       },
       deleted_at: null,
+      // 親契約が論理削除された孤児合祀（#358 以前の削除由来）を請求対象から除外する。
+      // getCollectiveBurialList/ById（layer2 ガード #361）と同じ不変条件を請求バッチ経路にも揃え、
+      // 削除済み契約の合祀が billed に遷移して「成功」レポートされるのを防ぐ。
+      contractPlot: { is: { deleted_at: null } },
     },
     include: {
       contractPlot: {

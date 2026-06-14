@@ -3,6 +3,7 @@ import type { RowDataPacket } from 'mysql2/promise';
 import { legacyQuery } from '../legacyDb';
 import { rebuildIdMap } from '../lib/id-map-loader';
 import { assertIdMapsReady } from '../lib/invariants';
+import { loadRelationshipNameMap, resolveRelationship } from '../lib/relationship-resolver';
 import { cleanStr, joinName, parseGender, parseLegacyDate } from '../transforms';
 import type { MigrationStep } from '../types';
 
@@ -45,6 +46,10 @@ export const stepBuriedPerson: MigrationStep = {
     // dry-run でも resume 用に再構築（読み取り専用・冪等、full dry-run では no-op）
     await rebuildIdMap(prisma, idMaps, 'contractPlot', logger);
     assertIdMapsReady('buriedPerson', idMaps, ['contractPlot']);
+
+    // 喪主続柄（moshu_zokugara）を続柄マスタ名へ解決するための対応表（#394）。
+    // family_contacts と同じ resolver を共有し、生int/未解決センチネルの露出を防ぐ。
+    const relationshipNameMap = await loadRelationshipNameMap(prisma);
 
     const rows = await legacyQuery<MaisouRow>(
       `SELECT maisou_cd, danka_cd, grave_cd, kaimyou, kaimyou_kana,
@@ -118,8 +123,13 @@ export const stepBuriedPerson: MigrationStep = {
           death_place: cleanStr(row.siboubasyo),
           cause_of_death: cleanStr(row.siin),
           chief_mourner_name: joinName(row.moshu_sei, row.moshu_mei),
+          // 続柄マスタ名へ解決（#394）。未解決/null は resolveRelationship が空文字を返すため
+          // `|| null` で nullable 列の「未設定」を null に統一する（旧 legacy-zokugara-* センチネル廃止）。
           chief_mourner_relationship:
-            row.moshu_zokugara != null ? `legacy-zokugara-${row.moshu_zokugara}` : null,
+            resolveRelationship(
+              row.moshu_zokugara != null ? String(row.moshu_zokugara) : '',
+              relationshipNameMap
+            ) || null,
           notes: cleanStr(row.note),
         },
       });

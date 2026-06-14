@@ -300,6 +300,8 @@ describe('collectiveBurialUtils', () => {
       expect(callArgs.where.billing_status).toBe('pending');
       expect(callArgs.where.billing_scheduled_date.lte).toBeInstanceOf(Date);
       expect(callArgs.where.deleted_at).toBeNull();
+      // 親契約が論理削除された孤児合祀を請求バッチ経路でも除外する（layer2 ガード横展開・#394）
+      expect(callArgs.where.contractPlot).toEqual({ is: { deleted_at: null } });
       expect(callArgs).toMatchObject({
         include: {
           contractPlot: {
