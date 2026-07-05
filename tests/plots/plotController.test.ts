@@ -679,7 +679,6 @@ describe('Plot Controller (ContractPlot Model)', () => {
         physical_plot_id: 'pp1',
         contract_area_sqm: new Prisma.Decimal(3.6),
         location_description: 'A区画',
-        inscription: '連絡は長男へ',
         created_at: new Date('2024-01-01'),
         updated_at: new Date('2024-01-01'),
         deleted_at: null,
@@ -781,7 +780,6 @@ describe('Plot Controller (ContractPlot Model)', () => {
             contractStatus: 'active',
             paymentStatus: 'paid',
             requestDate: new Date('2023-12-01'),
-            inscription: '連絡は長男へ',
             graveKind: 1,
             graveKubun: 2,
             graveType: 3,
@@ -822,7 +820,6 @@ describe('Plot Controller (ContractPlot Model)', () => {
         contractPlot: {
           contractAreaSqm: 3.6,
           saleStatus: 'contracted',
-          inscription: '連絡は長男へ',
         },
         saleContract: {
           contractDate: '2024-01-01',
@@ -887,12 +884,6 @@ describe('Plot Controller (ContractPlot Model)', () => {
       expect(mockPrisma.$transaction).toHaveBeenCalled();
       expect(validateContractArea).toHaveBeenCalled();
       expect(updatePhysicalPlotStatus).toHaveBeenCalled();
-      // 碑文(inscription)が contractPlot.create の data に渡る（komine-docs#10 項目1）
-      expect(mockPrisma.contractPlot.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({ inscription: '連絡は長男へ' }),
-        })
-      );
       expect(responseStatus).toHaveBeenCalledWith(201);
       expect(responseJson).toHaveBeenCalledWith(
         expect.objectContaining({

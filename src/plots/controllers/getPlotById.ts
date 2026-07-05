@@ -126,7 +126,6 @@ export const getPlotById = async (
       startDate: contractPlot.start_date,
       uncollectedAmount: contractPlot.uncollected_amount,
       contractNotes: contractPlot.notes,
-      inscription: contractPlot.inscription,
 
       // レガシー由来の区分コード
       graveKind: contractPlot.grave_kind,

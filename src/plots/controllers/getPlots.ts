@@ -412,9 +412,6 @@ export const getPlots = async (req: Request, res: Response, next: NextFunction) 
         contractNotes: contractPlot.notes || null,
         customerNotes: primaryCustomer?.notes || null,
 
-        // 碑文（注意書きの一言・一覧表示用）
-        inscription: contractPlot.inscription || null,
-
         // 埋葬者名（一覧表示用）
         buriedPersonNames:
           contractPlot.buriedPersons?.map((bp: { name: string }) => bp.name).filter(Boolean) || [],

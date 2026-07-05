@@ -155,10 +155,6 @@ export async function updatePlotCore(
     if (input.contractPlot.locationDescription !== undefined) {
       updateData.location_description = input.contractPlot.locationDescription;
     }
-
-    if (input.contractPlot.inscription !== undefined) {
-      updateData.inscription = input.contractPlot.inscription;
-    }
   }
 
   if (input.saleContract) {
@@ -1540,7 +1536,6 @@ export async function updatePlotCore(
     const beforeContractPlotData = {
       contract_area_sqm: existingContractPlot.contract_area_sqm.toString(),
       location_description: existingContractPlot.location_description,
-      inscription: existingContractPlot.inscription,
       contract_date: existingContractPlot.contract_date?.toISOString(),
       price: existingContractPlot.price,
       payment_status: existingContractPlot.payment_status,
@@ -1558,7 +1553,6 @@ export async function updatePlotCore(
       ? {
           contract_area_sqm: updatedCp.contract_area_sqm.toString(),
           location_description: updatedCp.location_description,
-          inscription: updatedCp.inscription,
           contract_date: updatedCp.contract_date?.toISOString(),
           price: updatedCp.price,
           payment_status: updatedCp.payment_status,
