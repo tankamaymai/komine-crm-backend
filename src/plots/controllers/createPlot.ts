@@ -156,7 +156,6 @@ export async function createPlotCore(
       contract_status: ContractStatus.active,
       contract_area_sqm: new Prisma.Decimal(input.contractPlot.contractAreaSqm),
       location_description: input.contractPlot.locationDescription || null,
-      inscription: input.contractPlot.inscription || null,
       burial_capacity: input.collectiveBurial?.burialCapacity ?? null,
       validity_period_years: input.collectiveBurial?.validityPeriodYears ?? null,
       contract_date: input.saleContract.contractDate

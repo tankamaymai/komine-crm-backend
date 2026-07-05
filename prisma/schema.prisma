@@ -161,7 +161,6 @@ model ContractPlot {
   // 契約区画情報
   contract_area_sqm    Decimal @db.Decimal(5, 2) // 契約された面積（例: 3.6, 1.8, 0.9）
   location_description String? @db.VarChar(200) // 物理区画内のどの位置か（例: 左半分、右側）
-  inscription          String? @db.VarChar(120) // 碑文（注意書きの一言・一覧表示用）。墓誌(GravestoneInfo)とは別物
 
   // 合祀設定（設定されている場合、この区画は合祀対象）
   burial_capacity       Int? // 埋葬上限人数（nullの場合は合祀対象外）

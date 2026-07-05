@@ -73,7 +73,6 @@ export const FIELD_LABELS: Record<HistoryEntityType, Record<string, string>> = {
   ContractPlot: {
     contract_area_sqm: '契約面積',
     location_description: '位置情報',
-    inscription: '碑文',
     contract_date: '契約日',
     price: '契約金額',
     payment_status: '支払ステータス',
