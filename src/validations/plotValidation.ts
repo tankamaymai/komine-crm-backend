@@ -95,6 +95,30 @@ const physicalPlotUpdateSchema = sharedPhysicalPlotSchema
   .partial();
 
 /**
+ * 空き区画（物理区画のみ）先行登録のバリデーションスキーマ
+ * POST /plots/physical（システム確認 項目⑦）
+ * 契約者・契約情報なしで区画だけを登録する。区画番号・区画名は必須。
+ */
+export const createPhysicalPlotSchema = z.object({
+  plotNumber: z
+    .string()
+    .min(1, '区画番号は必須です')
+    .max(50, '区画番号は50文字以内で入力してください'),
+  displayNumber: z.string().max(50).optional().nullable().or(z.literal('')),
+  areaName: z
+    .string()
+    .min(1, '区画名（エリア）は必須です')
+    .max(100, '区画名は100文字以内で入力してください'),
+  areaSqm: z.coerce
+    .number()
+    .positive('面積は0より大きい値を入力してください')
+    .lt(1000, '面積は1000㎡未満で入力してください')
+    .optional(),
+  mapId: z.coerce.number().int().optional().nullable(),
+  notes: z.string().max(2000).optional().nullable().or(z.literal('')),
+});
+
+/**
  * 家族連絡先のバリデーションスキーマ
  * 共有スキーマをベースに、バックエンド固有フィールド（_delete, customerId, useWorkContact 等）を追加。
  * バルク登録でのスキップ判定（controller 側が必須フィールド欠落行をスキップ）と整合させるため、

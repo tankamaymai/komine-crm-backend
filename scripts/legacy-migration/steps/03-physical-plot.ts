@@ -1,7 +1,7 @@
 import type { RowDataPacket } from 'mysql2/promise';
 
 import { legacyQuery } from '../legacyDb';
-import { cleanStr, normalizeGraveName } from '../transforms';
+import { cleanStr, normalizeGraveName, parseLegacyArea } from '../transforms';
 import type { MigrationStep } from '../types';
 
 interface BochiPhysicalRow extends RowDataPacket {
@@ -13,6 +13,8 @@ interface BochiPhysicalRow extends RowDataPacket {
   map_id: number | null;
   note: string | null;
   m_area_name: string | null; // m_area.area_name（area_cd 経由の実区画名。#151）
+  shiyouryou_menseki: string | null; // 使用料面積（実面積。システム確認 項目⑤）
+  kanriryou_menseki: string | null; // 管理料面積（使用料面積が無い場合のフォールバック）
 }
 
 /**
@@ -33,6 +35,7 @@ export const stepPhysicalPlot: MigrationStep = {
   async run({ prisma, logger, idMaps, dryRun }) {
     const rows = await legacyQuery<BochiPhysicalRow>(
       `SELECT b.grave_cd, b.chiku_cd, b.area_cd, b.grave_name_cd, b.grave_mei, b.map_id, b.note,
+              b.shiyouryou_menseki, b.kanriryou_menseki,
               a.area_name AS m_area_name
          FROM m_bochi b
          LEFT JOIN m_area a ON a.area_cd = b.area_cd
@@ -89,12 +92,18 @@ export const stepPhysicalPlot: MigrationStep = {
         continue;
       }
 
+      // 実面積はレガシーの使用料面積（無ければ管理料面積）から取得する。
+      // 1 m_bochi = 1 PhysicalPlot + 1 ContractPlot の 1:1 分解のため物理面積＝契約面積。
+      // どちらも数値化できない行のみ従来デフォルト 3.6 を維持（システム確認 項目⑤）。
+      const areaSqm =
+        parseLegacyArea(row.shiyouryou_menseki) ?? parseLegacyArea(row.kanriryou_menseki) ?? 3.6;
+
       const created = await prisma.physicalPlot.create({
         data: {
           plot_number: plotNumber,
           display_number: displayNumber,
           area_name: areaName,
-          area_sqm: 3.6, // デフォルト（実面積はレガシーに無いので 3.6 固定）
+          area_sqm: areaSqm,
           status: 'available', // ContractPlot 側で active があれば後で sold_out に更新
           map_id: row.map_id ?? null,
           notes,

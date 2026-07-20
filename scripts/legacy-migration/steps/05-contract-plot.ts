@@ -4,7 +4,7 @@ import type { RowDataPacket } from 'mysql2/promise';
 import { legacyQuery } from '../legacyDb';
 import { rebuildIdMap } from '../lib/id-map-loader';
 import { assertIdMapsReady } from '../lib/invariants';
-import { cleanStr, parseLegacyDate } from '../transforms';
+import { cleanStr, parseLegacyArea, parseLegacyDate } from '../transforms';
 import type { MigrationStep } from '../types';
 
 // 旧 sykbnn 区分コード → 新マスタ code（seedMasters.ts と一致させること）
@@ -182,9 +182,14 @@ export const stepContractPlot: MigrationStep = {
       // GravestoneInfo へ別途格納済み #326）。新規入力分はスタッフが必要に応じ調整する。
       const contractDate = parseLegacyDate(row.contract_start);
 
+      // 契約面積はレガシーの使用料面積（無ければ管理料面積）から取得。
+      // どちらも数値化できない行のみ従来デフォルト 3.6（システム確認 項目⑤）。
+      const contractAreaSqm =
+        parseLegacyArea(row.shiyouryou_menseki) ?? parseLegacyArea(row.kanriryou_menseki) ?? 3.6;
+
       const data: Prisma.ContractPlotCreateInput = {
         physicalPlot: { connect: { id: physicalPlotId } },
-        contract_area_sqm: 3.6,
+        contract_area_sqm: contractAreaSqm,
         contract_status: contractStatus,
         payment_status: 'unpaid', // Step 10 (Billing) 後に再計算する余地あり
         grave_kind: row.grave_kind,
