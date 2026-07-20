@@ -134,7 +134,7 @@ model PhysicalPlot {
   // 一意でないため plot_number には使えず、表示専用の非ユニーク列として保持。#158
   display_number String?         @db.VarChar(100)
   area_name   String             @db.VarChar(100) // 区画（期）（例: 1期、2期）
-  area_sqm    Decimal            @default(3.6) @db.Decimal(5, 2) // 区画の総面積（基本3.6㎡）
+  area_sqm    Decimal            @default(3.6) @db.Decimal(6, 3) // 区画の総面積（レガシー実面積は3桁小数あり: 0.013等）
   status      PhysicalPlotStatus @default(available) // 区画ステータス
   map_id      Int? // マップ位置ID（レガシー map_id）
   notes       String?            @db.Text // 備考
@@ -159,7 +159,7 @@ model ContractPlot {
   physical_plot_id String // 物理区画ID
 
   // 契約区画情報
-  contract_area_sqm    Decimal @db.Decimal(5, 2) // 契約された面積（例: 3.6, 1.8, 0.9）
+  contract_area_sqm    Decimal @db.Decimal(6, 3) // 契約された面積（例: 3.6, 1.8, 0.013。レガシー実面積は3桁小数あり）
   location_description String? @db.VarChar(200) // 物理区画内のどの位置か（例: 左半分、右側）
 
   // 合祀設定（設定されている場合、この区画は合祀対象）

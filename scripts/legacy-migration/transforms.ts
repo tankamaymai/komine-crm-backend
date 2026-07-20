@@ -81,6 +81,29 @@ export function requireStr(value: unknown, fallback = ''): string {
 }
 
 /**
+ * レガシー面積文字列（m_bochi.shiyouryou_menseki / kanriryou_menseki）→ ㎡数値。
+ *
+ * 実データは "3.6" "0.2" "0.013" "2.475" 等の数値文字列（全件で3桁小数まで）。
+ * 念のため全角数字・㎡/m2 サフィックス・カンマにも耐える。
+ * "0" は「面積0（レガシーの登録値そのまま）」として 0 を返す（システム確認 項目⑤）。
+ * 数値化できない・負値・1000㎡以上（異常値）は null。
+ * DB 格納先は numeric(6,3) のため小数第3位に丸める。
+ */
+export function parseLegacyArea(value: unknown): number | null {
+  const s = normalizeGraveName(value);
+  if (s === null) return null;
+  const cleaned = s
+    .replace(/．/g, '.')
+    .replace(/[,，]/g, '')
+    .replace(/(㎡|m2|M2|平米)\s*$/, '')
+    .trim();
+  if (!/^\d+(\.\d+)?$/.test(cleaned)) return null;
+  const n = Number(cleaned);
+  if (!Number.isFinite(n) || n < 0 || n >= 1000) return null;
+  return Math.round(n * 1000) / 1000;
+}
+
+/**
  * 電話番号: ハイフン除去、数字のみに正規化。長さが 11 桁を超えたら 11 桁にトリム
  */
 export function cleanPhone(value: unknown): string | null {

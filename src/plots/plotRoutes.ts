@@ -4,6 +4,7 @@ import {
   getGraveClassifications,
   getPlotById,
   createPlot,
+  createPhysicalPlot,
   updatePlot,
   deletePlot,
   restoreContract,
@@ -26,6 +27,7 @@ import {
   plotSearchQuerySchema,
   plotIdParamsSchema,
   createPlotSchema,
+  createPhysicalPlotSchema,
   updatePlotSchema,
   createPlotContractSchema,
   restoreContractSchema,
@@ -118,6 +120,16 @@ router.post(
   requirePermission(['operator', 'manager', 'admin']),
   validate({ body: createPlotSchema }),
   withLogging('Plots', 'createPlot', createPlot)
+);
+
+// 空き区画（物理区画のみ）先行登録（システム確認 項目⑦）
+// 旧システムの「区画を先ず作り、後から契約者を入れる」運用に対応
+router.post(
+  '/physical',
+  authenticate,
+  requirePermission(['operator', 'manager', 'admin']),
+  validate({ body: createPhysicalPlotSchema }),
+  withLogging('Plots', 'createPhysicalPlot', createPhysicalPlot)
 );
 
 // 区画情報更新
