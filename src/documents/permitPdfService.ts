@@ -105,7 +105,7 @@ function drawField(
 }
 
 /**
- * 許可証・封筒書・封筒台: 指定ページ定義どおりに PDF を結合して返す
+ * 許可証・封筒書・封筒大: 指定ページ定義どおりに PDF を結合して返す
  */
 export async function generatePermitPdfFromPages(
   pages: readonly PermitPage[],
