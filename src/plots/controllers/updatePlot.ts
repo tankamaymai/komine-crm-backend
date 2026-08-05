@@ -30,6 +30,7 @@ import {
 import {
   updateCollectiveBurialCount,
   resolveBillingScheduledDate,
+  findFinalBurialDate,
 } from '../../collective-burials/utils';
 import { assertAssignableCustomer } from '../services/assertAssignableCustomer';
 
@@ -1064,13 +1065,20 @@ export async function updatePlotCore(
     }
   }
 
-  // 9.1. 請求予定日の再計算（#164: 契約日起点）
-  // 契約日（step 2 適用後の値）＋有効期間から導出する。合祀情報の削除時は対象なし。
+  // 9.1. 請求予定日の再計算
+  // 起点は「最終納骨者の埋葬日、無ければ契約日（step 2 適用後の値）」＋有効期間で導出する
+  // （議事録 2026-07-21 §1 / #164）。合祀情報の削除時は対象なし。
+  //
+  // 最終納骨者を渡さないと、契約日だけを直した更新で最終納骨日起点の予定日が
+  // 契約日起点へ巻き戻ってしまう。埋葬者の同期は step 10 でこの後に走るため、
+  // ここで読むのは更新前の最終納骨者だが、step 10 の updateCollectiveBurialCount が
+  // 更新後の値で再計算するので最終状態は正しくなる。
   if (cbScheduleRecompute) {
     const aliveCB = await tx.collectiveBurial.findUnique({
       where: { contract_plot_id: id },
     });
-    if (aliveCB && !aliveCB.deleted_at) {
+    // 手動指定された予定日（例外運用 Q17）は自動再計算で上書きしない
+    if (aliveCB && !aliveCB.deleted_at && !aliveCB.billing_scheduled_date_manual) {
       const effectiveContractDate =
         updatedContractPlotRecord !== null
           ? updatedContractPlotRecord.contract_date
@@ -1080,7 +1088,8 @@ export async function updatePlotCore(
         data: {
           billing_scheduled_date: resolveBillingScheduledDate(
             effectiveContractDate,
-            aliveCB.validity_period_years
+            aliveCB.validity_period_years,
+            await findFinalBurialDate(tx, id)
           ),
         },
       });
@@ -1308,6 +1317,7 @@ export async function updatePlotCore(
         religion: bp.religion || null,
         ...formUnmanagedFields,
         validity_period_years_override: bp.validityPeriodYearsOverride ?? null,
+        is_final_burial: bp.isFinalBurial ?? false,
         notes: bp.notes || null,
       };
 
@@ -1328,6 +1338,7 @@ export async function updatePlotCore(
         chief_mourner_name: data.chief_mourner_name,
         chief_mourner_relationship: data.chief_mourner_relationship,
         validity_period_years_override: data.validity_period_years_override,
+        is_final_burial: data.is_final_burial,
         notes: data.notes,
       });
 
