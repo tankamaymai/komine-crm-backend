@@ -389,6 +389,24 @@ const handlePrismaError = (error: Prisma.PrismaClientKnownRequestError, res: Res
         },
       });
 
+    case 'P2021': // テーブルが存在しない
+    case 'P2022':
+      // 列が存在しない。Prisma Client が持つスキーマと実DBがズレている状態で、
+      // 実際の原因はほぼ「マイグレーションの適用漏れ」（prisma generate だけ実行し
+      // migrate deploy を忘れた等）。default の「データベースエラー」に落ちると
+      // 一時的なDB障害と区別できず調査に時間がかかるため、専用の案内にする。
+      // 列名・テーブル名はDB内部情報なのでクライアントへは返さない（#217）。
+      // 詳細は errorHandler 冒頭で prismaCode / prismaMeta 付きでログ・Sentry に記録済み。
+      return res.status(500).json({
+        success: false,
+        error: {
+          code: 'SCHEMA_MISMATCH',
+          message:
+            'データベースの構成がアプリと一致していません。マイグレーションの適用漏れの可能性があります',
+          details: [],
+        },
+      });
+
     default:
       return res.status(500).json({
         success: false,
