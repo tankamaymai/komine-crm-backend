@@ -141,7 +141,9 @@ export const getCollectiveBurialList = async (
               },
               buriedPersons: {
                 where: { deleted_at: null },
-                select: { id: true, name: true, burial_date: true },
+                // is_final_burial: 画面側で合祀予定日の起点（最終納骨日 or 契約日）を
+                // backend と同じ規則で表示するために返す（議事録 2026-07-21 §1）
+                select: { id: true, name: true, burial_date: true, is_final_burial: true },
               },
             },
           },
@@ -177,6 +179,7 @@ export const getCollectiveBurialList = async (
           id: bp.id,
           name: bp.name,
           burialDate: bp.burial_date?.toISOString().split('T')[0] || null,
+          isFinalBurial: bp.is_final_burial,
         })),
         createdAt: item.created_at.toISOString(),
         updatedAt: item.updated_at.toISOString(),
@@ -282,6 +285,7 @@ export const getCollectiveBurialById = async (
           age: bp.age,
           gender: bp.gender,
           burialDate: bp.burial_date?.toISOString().split('T')[0] || null,
+          isFinalBurial: bp.is_final_burial,
           notes: bp.notes,
         })),
         createdAt: collectiveBurial.created_at.toISOString(),
