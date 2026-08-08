@@ -249,6 +249,23 @@ describe('Plot Controller (ContractPlot Model)', () => {
   });
 
   describe('getPlots', () => {
+    // 一覧は埋葬者を1人1行に展開して表示するため、順序が安定しないとリクエストごとに
+    // 行が入れ替わって目視確認できない。旧システムと同じ納骨順に固定する。
+    it('埋葬者を納骨順（埋葬日昇順→登録順）で取得すること', async () => {
+      mockPrisma.contractPlot.findMany.mockResolvedValue([]);
+      mockPrisma.contractPlot.count.mockResolvedValue(0);
+      mockRequest.query = { page: '1', limit: '10' };
+
+      await getPlots(mockRequest as Request, mockResponse as Response, mockNext);
+
+      const findManyArg = mockPrisma.contractPlot.findMany.mock.calls[0][0];
+      expect(findManyArg.include.buriedPersons.orderBy).toEqual([
+        { burial_date: 'asc' },
+        { created_at: 'asc' },
+      ]);
+      expect(mockNext).not.toHaveBeenCalled();
+    });
+
     it('should return list of contract plots', async () => {
       const mockContractPlots = [
         {
