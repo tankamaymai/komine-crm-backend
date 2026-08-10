@@ -28,6 +28,8 @@
     "backfill:fee-master-codes": "ts-node --transpile-only scripts/backfill-fee-master-codes.ts",
     "backfill:contract-area": "ts-node --transpile-only scripts/backfill-contract-area.ts",
     "recalc:payment-status": "ts-node --transpile-only scripts/recalculate-payment-status.ts",
+    "list:area-mismatch": "ts-node --transpile-only scripts/list-area-mismatch.ts",
+    "list:split-plot-notation": "ts-node --transpile-only scripts/list-split-plot-notation.ts",
     "verify:migration": "ts-node --transpile-only scripts/verify-migration.ts",
     "lint": "eslint . --ext .ts",
     "lint:fix": "eslint . --ext .ts --fix",
