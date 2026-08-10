@@ -367,6 +367,85 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /api/v1/plots/vacant:
+    get:
+      tags:
+        - Plots
+      summary: 空き区画一覧取得
+      description: |
+        空き面積が残っている物理区画の一覧を返します。新規顧客登録時の区画指定を
+        手入力不可の選択式にするための選択肢です（議事録 2026-07-21 §6）。
+
+        空き判定は在庫系（GET /plots/{id}/inventory・契約面積検証）と同じ基準:
+        `空き面積 = 総面積 − active 契約の契約面積合計 > 0`。
+        vacant の器契約（空き区画の表現方式）と terminated（解約済み）は割当に数えません。
+
+        実データで空き区画は約2,500件、単一の区画名でも最大647件あるため、
+        areaName で絞り、必要に応じて search で更に絞って使ってください。
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: areaName
+          schema:
+            type: string
+            maxLength: 100
+          description: 区画名（エリア）の完全一致
+          example: 凛B
+        - in: query
+          name: search
+          schema:
+            type: string
+            maxLength: 50
+          description: 区画番号の部分一致（表示番号・内部番号の両方を対象）
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        "200":
+          description: 取得成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/VacantPlotItem"
+                      pagination:
+                        type: object
+                        properties:
+                          page:
+                            type: integer
+                          limit:
+                            type: integer
+                          total:
+                            type: integer
+                            description: 空き区画の総件数
+                          totalPages:
+                            type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /api/v1/plots/{id}:
     get:
       tags:
@@ -3328,6 +3407,29 @@ components:
         paymentMethod:
           type: string
           nullable: true
+
+    VacantPlotItem:
+      type: object
+      description: 空き区画一覧の1件（GET /plots/vacant）
+      properties:
+        id:
+          type: string
+          format: uuid
+        plotNumber:
+          type: string
+          description: ユニークキー。移行データは legacy-{grave_cd} のため表示には使わない
+        displayNumber:
+          type: string
+          nullable: true
+          description: 表示用区画番号（grave_name_cd 由来）
+        areaName:
+          type: string
+        areaSqm:
+          type: number
+          description: 物理区画の総面積(㎡)
+        availableAreaSqm:
+          type: number
+          description: 空き面積(㎡)。部分販売済みの区画は残り面積になる
 
     BuriedPersonInfo:
       type: object

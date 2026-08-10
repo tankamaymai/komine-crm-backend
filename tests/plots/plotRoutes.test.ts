@@ -65,6 +65,10 @@ jest.mock('../../src/plots/controllers', () => ({
   getInventoryAreas: jest.fn((req, res) =>
     res.status(200).json({ success: true, data: { items: [], pagination: {} } })
   ),
+  // 空き区画一覧（議事録 2026-07-21 §6: 区画指定を選択式にする）
+  getVacantPlots: jest.fn((req, res) =>
+    res.status(200).json({ success: true, data: { items: [], pagination: {} } })
+  ),
   // 履歴API
   getPlotHistory: jest.fn((req, res) =>
     res.status(200).json({ success: true, data: { items: [], total: 0 } })
@@ -81,6 +85,7 @@ import {
   getPlotContracts,
   createPlotContract,
   getPlotInventory,
+  getVacantPlots,
 } from '../../src/plots/controllers';
 
 describe('Plot Routes', () => {
@@ -114,6 +119,24 @@ describe('Plot Routes', () => {
       expect(getGraveClassifications).toHaveBeenCalled();
       expect(response.body.success).toBe(true);
       expect(response.body.data).toEqual({ graveKinds: [], graveKubuns: [], graveTypes: [] });
+    });
+  });
+
+  describe('GET /api/v1/plots/vacant', () => {
+    it('should call getVacantPlots controller', async () => {
+      const response = await request(app).get('/api/v1/plots/vacant');
+
+      expect(response.status).toBe(200);
+      expect(getVacantPlots).toHaveBeenCalled();
+      expect(response.body.success).toBe(true);
+    });
+
+    // '/vacant' が '/:id' より後に定義されると id='vacant' として getPlotById に流れる。
+    // ルート順序の回帰を検知する
+    it('should not fall through to getPlotById', async () => {
+      await request(app).get('/api/v1/plots/vacant');
+
+      expect(getPlotById).not.toHaveBeenCalled();
     });
   });
 

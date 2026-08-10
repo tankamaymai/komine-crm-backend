@@ -464,3 +464,19 @@ export type ChangeContractorRequest = z.infer<typeof changeContractorSchema>;
 
 // dateSchema も従来通り再エクスポート（他モジュールからの参照互換性維持）
 export { dateSchema };
+
+/**
+ * 空き区画一覧のクエリバリデーション
+ * GET /plots/vacant（議事録 2026-07-21 §6: 区画指定を手入力不可の選択式にする）
+ *
+ * 空き区画は実データで約2,500件、単一区画名でも最大647件あるため、
+ * 画面側は区画名で絞ってから使う。limit 上限は選択肢として現実的な範囲に抑える。
+ */
+export const vacantPlotsQuerySchema = z.object({
+  areaName: z.string().max(100).optional(),
+  search: z.string().max(50).optional(),
+  page: z.coerce.number().int().min(1).optional().default(1),
+  limit: z.coerce.number().int().min(1).max(200).optional().default(50),
+});
+
+export type VacantPlotsQuery = z.infer<typeof vacantPlotsQuerySchema>;
