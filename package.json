@@ -27,6 +27,7 @@
     "backfill:shiharai-payment-method": "ts-node --transpile-only scripts/backfill-shiharai-payment-method.ts",
     "backfill:fee-master-codes": "ts-node --transpile-only scripts/backfill-fee-master-codes.ts",
     "backfill:contract-area": "ts-node --transpile-only scripts/backfill-contract-area.ts",
+    "backfill:grave-mei-notes": "ts-node --transpile-only scripts/backfill-grave-mei-notes.ts",
     "recalc:payment-status": "ts-node --transpile-only scripts/recalculate-payment-status.ts",
     "verify:migration": "ts-node --transpile-only scripts/verify-migration.ts",
     "lint": "eslint . --ext .ts",

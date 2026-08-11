@@ -60,7 +60,8 @@ describe('step05 konryu → establishment マッピング (#326)', () => {
         contract_start: 20190401, // 契約日＝許可日＝開始日
         konryu_kigen: 20200101,
         konryu_date: 20200201,
-        note: null,
+        note: '契約備考',
+        grave_mei: '碑文テキスト',
       },
     ]);
 
@@ -77,6 +78,8 @@ describe('step05 konryu → establishment マッピング (#326)', () => {
     expect(cpData.permit_date).toBeInstanceOf(Date);
     // konryu 値（建立期限 20200101）が permit に入っていないこと
     expect((cpData.permit_date as Date).getUTCFullYear()).toBe(2019);
+    // 碑文(grave_mei)は契約備考へ統合
+    expect(cpData.notes).toBe('契約備考\n碑文テキスト');
 
     // GravestoneInfo に建立期限/建立日が入る
     expect(gravestoneInfoCreate).toHaveBeenCalledTimes(1);

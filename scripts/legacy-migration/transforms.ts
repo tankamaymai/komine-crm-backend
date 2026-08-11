@@ -58,6 +58,43 @@ export function cleanStr(value: unknown): string | null {
 }
 
 /**
+ * 備考テキストへ追記する（碑文→備考統合など）。
+ * - addition が空なら existing をそのまま返す
+ * - existing が空なら addition を返す
+ * - existing 全体または改行区切り行に addition が既にある場合は冪等にスキップ
+ * - それ以外は改行区切りで追記
+ */
+export function appendNoteIfMissing(
+  existing: string | null | undefined,
+  addition: string | null | undefined
+): string | null {
+  const add = cleanStr(addition);
+  if (add === null) return cleanStr(existing);
+  const cur = cleanStr(existing);
+  if (cur === null) return add;
+  if (cur === add) return cur;
+  const lines = cur.split(/\r?\n/);
+  if (lines.includes(add)) return cur;
+  return `${cur}\n${add}`;
+}
+
+/**
+ * 複数の備考断片を改行結合する（空は除外、完全一致の重複は除去）。
+ * 旧 note（備考）+ grave_mei（碑文）の契約備考統合に使う。
+ */
+export function mergeNoteParts(...parts: Array<string | null | undefined>): string | null {
+  const unique: string[] = [];
+  const seen = new Set<string>();
+  for (const part of parts) {
+    const s = cleanStr(part);
+    if (s === null || seen.has(s)) continue;
+    seen.add(s);
+    unique.push(s);
+  }
+  return unique.length > 0 ? unique.join('\n') : null;
+}
+
+/**
  * 表示用区画番号（grave_name_cd）の正規化。
  * 全角英数（Ａ-Ｚ ａ-ｚ ０-９）を半角へ変換し、前後空白を除去する。
  * "A-100" / "1.5-10" 等の区切り・記号や複数区画表記（"3/2・25/2"）はそのまま保持。

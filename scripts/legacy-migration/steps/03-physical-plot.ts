@@ -9,7 +9,6 @@ interface BochiPhysicalRow extends RowDataPacket {
   chiku_cd: number | null;
   area_cd: number | null;
   grave_name_cd: string | null;
-  grave_mei: string | null;
   map_id: number | null;
   note: string | null;
   m_area_name: string | null; // m_area.area_name（area_cd 経由の実区画名。#151）
@@ -34,7 +33,7 @@ export const stepPhysicalPlot: MigrationStep = {
   name: 'physicalPlot',
   async run({ prisma, logger, idMaps, dryRun }) {
     const rows = await legacyQuery<BochiPhysicalRow>(
-      `SELECT b.grave_cd, b.chiku_cd, b.area_cd, b.grave_name_cd, b.grave_mei, b.map_id, b.note,
+      `SELECT b.grave_cd, b.chiku_cd, b.area_cd, b.grave_name_cd, b.map_id, b.note,
               b.shiyouryou_menseki, b.kanriryou_menseki,
               a.area_name AS m_area_name
          FROM m_bochi b
@@ -66,11 +65,11 @@ export const stepPhysicalPlot: MigrationStep = {
       // ユニーク制約・一括取込キーのため legacy-{grave_cd} を維持し、表示はこちら。#158
       const displayNumber = normalizeGraveName(row.grave_name_cd);
 
+      // 物理区画の備考は m_bochi.note のみ。碑文(grave_mei)は契約備考(ContractPlot.notes)へ
+      // 統合する（step05）。grave_name_cd は display_number 側で扱うため notes に入れない。
       const notes =
         [
           cleanStr(row.note),
-          cleanStr(row.grave_mei),
-          cleanStr(row.grave_name_cd),
           row.chiku_cd === 0 || row.area_cd === 99999999 ? '[test-data candidate]' : null,
         ]
           .filter(Boolean)
