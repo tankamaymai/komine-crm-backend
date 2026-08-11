@@ -291,6 +291,10 @@ export const getPlots = async (req: Request, res: Response, next: NextFunction) 
       },
       buriedPersons: {
         where: { deleted_at: null },
+        // 一覧は埋葬者を1人1行に展開して表示するため、順序が安定しないと
+        // リクエストごとに行が入れ替わって目視確認できない。旧システムと同じ
+        // 納骨順（埋葬日の昇順）に固定し、埋葬日未入力は登録順で後ろに並べる。
+        orderBy: [{ burial_date: 'asc' }, { created_at: 'asc' }],
         select: {
           name: true,
           name_kana: true,

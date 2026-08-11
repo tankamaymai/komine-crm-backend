@@ -1,9 +1,13 @@
 /**
- * 回帰テスト: 合祀請求予定日の契約日起点化（#164）
+ * 回帰テスト: 合祀請求予定日の起点（#164 / 議事録 2026-07-21 §1）
  *
- * 業務確認（2026-06-07 Q17 ほか）: 合祀は契約から一定年数後・年数はお墓のタイプで決まる。
- * 旧設計（埋葬上限到達日起点）は埋葬者数に依存し、上限未到達の区画で請求予定日が
- * 永久に null になり請求が発火しないため廃止。
+ * 起点は「最終納骨者の埋葬日、無ければ契約日」。本ファイルは最終納骨者が未確定のとき
+ * 契約日起点にフォールバックする側を担保する（最終納骨日起点は
+ * collectiveBurialFinalBurial.test.ts）。
+ *
+ * 契約日起点のフォールバックを残すのは、業務確認（2026-06-07 Q17 ほか）で
+ * 「合祀は契約から一定年数後・年数はお墓のタイプで決まる」と確認されており、かつ
+ * 最終納骨者が確定しない区画で請求予定日が永久に null になり請求が発火しないため。
  *
  * - 作成時: billing_scheduled_date = contract_date + validity_period_years
  * - 契約日未設定: null（契約日設定時に updatePlot が再計算）
@@ -14,6 +18,7 @@ import { Request, Response, NextFunction } from 'express';
 const mockPrisma = {
   contractPlot: {
     findFirst: jest.fn(),
+    findUnique: jest.fn(),
   },
   collectiveBurial: {
     findUnique: jest.fn(),
@@ -23,6 +28,8 @@ const mockPrisma = {
   },
   buriedPerson: {
     count: jest.fn(),
+    // 最終納骨者の埋葬日取得。本ファイルは全ケース「最終納骨者なし」で契約日起点を見る
+    findFirst: jest.fn(),
   },
 };
 
@@ -49,6 +56,7 @@ const CB_ROW = {
   capacity_reached_date: null,
   validity_period_years: 33,
   billing_scheduled_date: null,
+  billing_scheduled_date_manual: false,
   billing_status: 'pending',
   billing_amount: null,
   notes: null,
@@ -57,7 +65,7 @@ const CB_ROW = {
   updated_at: new Date('2026-01-01'),
 };
 
-describe('合祀請求予定日の契約日起点化 (#164)', () => {
+describe('合祀請求予定日の契約日フォールバック (#164)', () => {
   let mockRequest: Partial<Request>;
   let mockResponse: Partial<Response>;
   let responseJson: jest.Mock;
@@ -71,6 +79,8 @@ describe('合祀請求予定日の契約日起点化 (#164)', () => {
     mockResponse = { status: responseStatus, json: responseJson };
     mockNext = jest.fn();
     mockRequest = { params: {}, body: {}, query: {} };
+    // 最終納骨者は未確定（＝契約日起点へフォールバックする）を既定にする
+    mockPrisma.buriedPerson.findFirst.mockResolvedValue(null);
   });
 
   describe('createCollectiveBurial', () => {
@@ -84,6 +94,10 @@ describe('合祀請求予定日の契約日起点化 (#164)', () => {
         .mockResolvedValueOnce({ ...CB_ROW, deleted_at: null }); // 再同期内の取得
       mockPrisma.collectiveBurial.create.mockResolvedValue(CB_ROW);
       mockPrisma.collectiveBurial.update.mockResolvedValue(CB_ROW);
+      // 再同期内の請求予定日再計算で契約日を読む（findFirst と同じ値を返す）
+      mockPrisma.contractPlot.findUnique.mockResolvedValue(
+        await mockPrisma.contractPlot.findFirst()
+      );
       mockPrisma.buriedPerson.count.mockResolvedValue(0);
 
       mockRequest.body = { contractPlotId: 'cp1', burialCapacity: 10, validityPeriodYears: 13 };
@@ -101,6 +115,10 @@ describe('合祀請求予定日の契約日起点化 (#164)', () => {
         .mockResolvedValueOnce({ ...CB_ROW, deleted_at: null });
       mockPrisma.collectiveBurial.create.mockResolvedValue(CB_ROW);
       mockPrisma.collectiveBurial.update.mockResolvedValue(CB_ROW);
+      // 再同期内の請求予定日再計算で契約日を読む（findFirst と同じ値を返す）
+      mockPrisma.contractPlot.findUnique.mockResolvedValue(
+        await mockPrisma.contractPlot.findFirst()
+      );
       mockPrisma.buriedPerson.count.mockResolvedValue(0);
 
       mockRequest.body = { contractPlotId: 'cp1', burialCapacity: 10, validityPeriodYears: 33 };

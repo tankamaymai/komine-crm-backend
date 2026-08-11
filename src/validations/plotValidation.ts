@@ -183,6 +183,21 @@ export const buriedPersonSchema = sharedBuriedPersonSchema.extend({
 });
 
 /**
+ * 埋葬者の配列。最終納骨者（isFinalBurial）は1契約区画につき1人までに制限する。
+ * 複数指定されると合祀カウントダウンの起点日が一意に決まらない（議事録 2026-07-21 §1）。
+ *
+ * 共有側の buriedPersonsSchema と同じ不変条件だが、backend は buriedPersonSchema を
+ * extend して独自に配列化しているため共有側の refine が効かない。ここで再度かける。
+ * createPlot / updatePlot の埋葬者はどちらも全置換（入力に無い既存行は soft-delete）
+ * なので、配列内の検査で DB 上の重複も防げる。
+ */
+export const buriedPersonsSchema = z
+  .array(buriedPersonSchema)
+  .refine((list) => list.filter((person) => person.isFinalBurial === true).length <= 1, {
+    message: '最終納骨者は1人までしか指定できません',
+  });
+
+/**
  * 墓石情報のバリデーションスキーマ
  * 共有スキーマをベースに、ルートが optional な APIペイロード形式に合わせる。
  */
@@ -361,7 +376,7 @@ export const createPlotSchema = z.object({
   familyContacts: z.array(familyContactSchema).optional(),
   // 埋葬者（任意）。スキーマ欠落により validate() で剥がされ、createPlot の保存処理
   // （createPlot.ts:375-424, PR#335）に届かず HTTP 経路で破棄されていた（#384, #320 同型）
-  buriedPersons: z.array(buriedPersonSchema).optional(),
+  buriedPersons: buriedPersonsSchema.optional(),
 });
 
 /**
@@ -384,7 +399,7 @@ export const updatePlotSchema = z.object({
   // スキーマ欠落により validate() で剥がされていた（#320）
   gravestoneInfo: gravestoneInfoSchema.or(z.null()),
   familyContacts: z.array(familyContactSchema).optional(),
-  buriedPersons: z.array(buriedPersonSchema).optional(),
+  buriedPersons: buriedPersonsSchema.optional(),
   constructionInfos: z.array(constructionInfoUpdateSchema).optional(),
   collectiveBurial: collectiveBurialSchema,
   // 変更理由（#261）。本更新で記録される履歴（History.change_reason VarChar(200)）に反映する
