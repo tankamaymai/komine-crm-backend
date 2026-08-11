@@ -17,6 +17,7 @@ import {
   getInventoryPeriods,
   getInventorySections,
   getInventoryAreas,
+  getVacantPlots,
   getPlotHistory,
 } from './controllers';
 import { authenticate } from '../middleware/auth';
@@ -33,6 +34,7 @@ import {
   restoreContractSchema,
   terminateContractSchema,
   changeContractorSchema,
+  vacantPlotsQuerySchema,
 } from '../validations/plotValidation';
 import {
   inventorySummaryQuerySchema,
@@ -98,6 +100,16 @@ router.get(
   requirePermission(['viewer', 'operator', 'manager', 'admin']),
   validate({ query: inventoryAreasQuerySchema }),
   withLogging('Plots', 'getInventoryAreas', getInventoryAreas)
+);
+
+// 空き区画一覧取得（議事録 2026-07-21 §6: 区画指定を手入力不可の選択式にする）
+// 注意: '/:id' より前に定義すること。後だと id='vacant' として解釈される
+router.get(
+  '/vacant',
+  authenticate,
+  requirePermission(['viewer', 'operator', 'manager', 'admin']),
+  validate({ query: vacantPlotsQuerySchema }),
+  withLogging('Plots', 'getVacantPlots', getVacantPlots)
 );
 
 // ==========================================
