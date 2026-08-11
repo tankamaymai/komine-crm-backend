@@ -182,6 +182,7 @@ export const getPlotById = async (
         chiefMournerName: person.chief_mourner_name,
         chiefMournerRelationship: person.chief_mourner_relationship,
         validityPeriodYearsOverride: person.validity_period_years_override,
+        isFinalBurial: person.is_final_burial,
         notes: person.notes,
       })),
 

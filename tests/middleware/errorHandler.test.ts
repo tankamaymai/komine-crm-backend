@@ -353,6 +353,71 @@ describe('Error Handler Middleware', () => {
         });
       });
 
+      // スキーマとDBのズレ（マイグレーション適用漏れ）は「データベースエラー」の一言だと
+      // 原因が分からず調査に時間がかかる。運用が自力で気づけるメッセージにする。
+      it('P2022（列が存在しない）をスキーマ不整合として案内すること', () => {
+        const error = new Prisma.PrismaClientKnownRequestError(
+          'The column `buried_persons.is_final_burial` does not exist in the current database.',
+          {
+            code: 'P2022',
+            clientVersion: '5.0.0',
+          }
+        );
+
+        errorHandler(error, mockRequest as Request, mockResponse as Response, mockNext);
+
+        expect(mockResponse.status).toHaveBeenCalledWith(500);
+        expect(mockResponse.json).toHaveBeenCalledWith({
+          success: false,
+          error: {
+            code: 'SCHEMA_MISMATCH',
+            message:
+              'データベースの構成がアプリと一致していません。マイグレーションの適用漏れの可能性があります',
+            details: [],
+          },
+        });
+      });
+
+      it('P2021（テーブルが存在しない）も同じ案内にすること', () => {
+        const error = new Prisma.PrismaClientKnownRequestError(
+          'The table `public.buried_persons` does not exist in the current database.',
+          {
+            code: 'P2021',
+            clientVersion: '5.0.0',
+          }
+        );
+
+        errorHandler(error, mockRequest as Request, mockResponse as Response, mockNext);
+
+        expect(mockResponse.status).toHaveBeenCalledWith(500);
+        expect(mockResponse.json).toHaveBeenCalledWith({
+          success: false,
+          error: {
+            code: 'SCHEMA_MISMATCH',
+            message:
+              'データベースの構成がアプリと一致していません。マイグレーションの適用漏れの可能性があります',
+            details: [],
+          },
+        });
+      });
+
+      // テーブル名・列名はDB内部情報のためクライアントへ返さない（#217）
+      it('P2022 の応答に列名・テーブル名を含めないこと（#217）', () => {
+        const error = new Prisma.PrismaClientKnownRequestError(
+          'The column `buried_persons.is_final_burial` does not exist in the current database.',
+          {
+            code: 'P2022',
+            clientVersion: '5.0.0',
+          }
+        );
+
+        errorHandler(error, mockRequest as Request, mockResponse as Response, mockNext);
+
+        const body = JSON.stringify((mockResponse.json as jest.Mock).mock.calls[0][0]);
+        expect(body).not.toContain('buried_persons');
+        expect(body).not.toContain('is_final_burial');
+      });
+
       it('その他のPrismaエラーを正しく処理すること', () => {
         const error = new Prisma.PrismaClientKnownRequestError('Unknown error', {
           code: 'P9999',

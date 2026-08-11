@@ -3465,6 +3465,11 @@ components:
         graveNumber:
           type: string
           nullable: true
+        isFinalBurial:
+          type: boolean
+          description: >-
+            最終納骨者かどうか（議事録 2026-07-21 §1）。true の人の burialDate が
+            合祀カウントダウンの起点になる（未確定なら契約日起点）。
         notes:
           type: string
           nullable: true
@@ -4229,6 +4234,14 @@ components:
                 minimum: 1
                 nullable: true
                 example: 10
+              isFinalBurial:
+                type: boolean
+                description: >-
+                  最終納骨者かどうか（議事録 2026-07-21 §1）。true の人の burialDate が
+                  合祀カウントダウンの起点になる（未指定なら契約日起点）。
+                  1契約区画につき1人まで。2人以上指定すると 400 になる。
+                default: false
+                example: false
               notes:
                 type: string
                 description: 備考
