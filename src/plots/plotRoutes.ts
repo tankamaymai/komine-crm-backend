@@ -4,6 +4,7 @@ import {
   getGraveClassifications,
   getPlotById,
   createPlot,
+  createPhysicalPlot,
   updatePlot,
   deletePlot,
   restoreContract,
@@ -16,6 +17,7 @@ import {
   getInventoryPeriods,
   getInventorySections,
   getInventoryAreas,
+  getVacantPlots,
   getPlotHistory,
 } from './controllers';
 import { authenticate } from '../middleware/auth';
@@ -26,11 +28,13 @@ import {
   plotSearchQuerySchema,
   plotIdParamsSchema,
   createPlotSchema,
+  createPhysicalPlotSchema,
   updatePlotSchema,
   createPlotContractSchema,
   restoreContractSchema,
   terminateContractSchema,
   changeContractorSchema,
+  vacantPlotsQuerySchema,
 } from '../validations/plotValidation';
 import {
   inventorySummaryQuerySchema,
@@ -98,6 +102,16 @@ router.get(
   withLogging('Plots', 'getInventoryAreas', getInventoryAreas)
 );
 
+// 空き区画一覧取得（議事録 2026-07-21 §6: 区画指定を手入力不可の選択式にする）
+// 注意: '/:id' より前に定義すること。後だと id='vacant' として解釈される
+router.get(
+  '/vacant',
+  authenticate,
+  requirePermission(['viewer', 'operator', 'manager', 'admin']),
+  validate({ query: vacantPlotsQuerySchema }),
+  withLogging('Plots', 'getVacantPlots', getVacantPlots)
+);
+
 // ==========================================
 // 区画情報CRUD
 // ==========================================
@@ -118,6 +132,16 @@ router.post(
   requirePermission(['operator', 'manager', 'admin']),
   validate({ body: createPlotSchema }),
   withLogging('Plots', 'createPlot', createPlot)
+);
+
+// 空き区画（物理区画のみ）先行登録（システム確認 項目⑦）
+// 旧システムの「区画を先ず作り、後から契約者を入れる」運用に対応
+router.post(
+  '/physical',
+  authenticate,
+  requirePermission(['operator', 'manager', 'admin']),
+  validate({ body: createPhysicalPlotSchema }),
+  withLogging('Plots', 'createPhysicalPlot', createPhysicalPlot)
 );
 
 // 区画情報更新

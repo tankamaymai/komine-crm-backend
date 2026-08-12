@@ -128,19 +128,19 @@ enum StaffRole {
 
 // 物理区画マスタ: 霊園の土地の境界線で区切られた最小単位（3.6㎡区画）
 model PhysicalPlot {
-  id          String             @id @default(uuid()) @map("physical_plot_id")
-  plot_number String             @unique @db.VarChar(50) // 区画番号（例: A-56）※ユニークキー兼一括取込キー。移行データは legacy-{grave_cd}
+  id             String             @id @default(uuid()) @map("physical_plot_id")
+  plot_number    String             @unique @db.VarChar(50) // 区画番号（例: A-56）※ユニークキー兼一括取込キー。移行データは legacy-{grave_cd}
   // 表示用区画番号（レガシー grave_name_cd 由来、例: "A-100"）。grave_name_cd は
   // 一意でないため plot_number には使えず、表示専用の非ユニーク列として保持。#158
-  display_number String?         @db.VarChar(100)
-  area_name   String             @db.VarChar(100) // 区画（期）（例: 1期、2期）
-  area_sqm    Decimal            @default(3.6) @db.Decimal(5, 2) // 区画の総面積（基本3.6㎡）
-  status      PhysicalPlotStatus @default(available) // 区画ステータス
-  map_id      Int? // マップ位置ID（レガシー map_id）
-  notes       String?            @db.Text // 備考
-  created_at  DateTime           @default(now())
-  updated_at  DateTime           @updatedAt
-  deleted_at  DateTime?
+  display_number String?            @db.VarChar(100)
+  area_name      String             @db.VarChar(100) // 区画（期）（例: 1期、2期）
+  area_sqm       Decimal            @default(3.6) @db.Decimal(6, 3) // 区画の総面積（レガシー実面積は3桁小数あり: 0.013等）
+  status         PhysicalPlotStatus @default(available) // 区画ステータス
+  map_id         Int? // マップ位置ID（レガシー map_id）
+  notes          String?            @db.Text // 備考
+  created_at     DateTime           @default(now())
+  updated_at     DateTime           @updatedAt
+  deleted_at     DateTime?
 
   // Relations
   contractPlots ContractPlot[] // 契約区画（1:N）
@@ -159,7 +159,7 @@ model ContractPlot {
   physical_plot_id String // 物理区画ID
 
   // 契約区画情報
-  contract_area_sqm    Decimal @db.Decimal(5, 2) // 契約された面積（例: 3.6, 1.8, 0.9）
+  contract_area_sqm    Decimal @db.Decimal(6, 3) // 契約された面積（例: 3.6, 1.8, 0.013。レガシー実面積は3桁小数あり）
   location_description String? @db.VarChar(200) // 物理区画内のどの位置か（例: 左半分、右側）
 
   // 合祀設定（設定されている場合、この区画は合祀対象）
@@ -476,28 +476,33 @@ model FamilyContact {
 
 // 埋葬者一覧
 model BuriedPerson {
-  id                         String    @id @default(uuid()) @map("buried_person_id")
-  contract_plot_id           String // 契約区画ID
-  name                       String    @db.VarChar(100)
-  name_kana                  String?   @db.VarChar(100)
-  relationship               String?   @db.VarChar(50)
-  birth_date                 DateTime? @db.Date // 生年月日
-  death_date                 DateTime? @db.Date
-  age                        Int?
-  gender                     Gender? // 性別
-  burial_date                DateTime? @db.Date
-  posthumous_name            String?   @db.VarChar(200) // 戒名
-  report_date                DateTime? @db.Date // 届出日（埋葬届）
-  religion                   String?   @db.VarChar(50) // 宗派
-  death_place                String?   @db.VarChar(200) // 死亡場所（レガシー siboubasyo）
-  cause_of_death             String?   @db.VarChar(200) // 死因（レガシー siin、センシティブ情報）
-  chief_mourner_name         String?   @db.VarChar(100) // 喪主氏名（レガシー moshu_sei + moshu_mei）
-  chief_mourner_relationship String?   @db.VarChar(50) // 喪主続柄（レガシー moshu_zokugara）
+  id                             String    @id @default(uuid()) @map("buried_person_id")
+  contract_plot_id               String // 契約区画ID
+  name                           String    @db.VarChar(100)
+  name_kana                      String?   @db.VarChar(100)
+  relationship                   String?   @db.VarChar(50)
+  birth_date                     DateTime? @db.Date // 生年月日
+  death_date                     DateTime? @db.Date
+  age                            Int?
+  gender                         Gender? // 性別
+  burial_date                    DateTime? @db.Date
+  posthumous_name                String?   @db.VarChar(200) // 戒名
+  report_date                    DateTime? @db.Date // 届出日（埋葬届）
+  religion                       String?   @db.VarChar(50) // 宗派
+  death_place                    String?   @db.VarChar(200) // 死亡場所（レガシー siboubasyo）
+  cause_of_death                 String?   @db.VarChar(200) // 死因（レガシー siin、センシティブ情報）
+  chief_mourner_name             String?   @db.VarChar(100) // 喪主氏名（レガシー moshu_sei + moshu_mei）
+  chief_mourner_relationship     String?   @db.VarChar(50) // 喪主続柄（レガシー moshu_zokugara）
   validity_period_years_override Int? // 合祀年数の個別上書き（null=区画の合祀年数を継承）。komine-docs#10 項目8
-  notes                      String?   @db.Text
-  created_at                 DateTime  @default(now())
-  updated_at                 DateTime  @updatedAt
-  deleted_at                 DateTime?
+  // 最終納骨者かどうか（議事録 2026-07-21 §1）。true の人の burial_date が合祀カウントダウンの
+  // 起点になる（不在なら契約日起点）。契約人数と実際の納骨人数が一致しないケース
+  // （4人契約だが3人で終了）があり上限人数では判定できないため、運用側の明示指定で確定させる。
+  // 1契約区画につき1人まで（アプリ層で担保）。
+  is_final_burial                Boolean   @default(false)
+  notes                          String?   @db.Text
+  created_at                     DateTime  @default(now())
+  updated_at                     DateTime  @updatedAt
+  deleted_at                     DateTime?
 
   legacy_maisou_cd Int? @unique // レガシー t_maisou.maisou_cd（移行の冪等キー #220）
 
@@ -533,19 +538,24 @@ model WorkInfo {
 
 // 合祀情報（複数の故人を一つの区画に祀る管理）
 model CollectiveBurial {
-  id                     String        @id @default(uuid()) @map("collective_burial_id")
-  contract_plot_id       String        @unique // 契約区画ID（1対1リレーション）
-  burial_capacity        Int // 埋葬上限人数
-  current_burial_count   Int           @default(0) // 現在埋葬人数（BuriedPersonsから自動集計）
-  capacity_reached_date  DateTime?     @db.Date // 上限到達日
-  validity_period_years  Int // 有効期間（年単位）
-  billing_scheduled_date DateTime?     @db.Date // 請求予定日（上限到達日 + 有効期間）
-  billing_status         BillingStatus @default(pending) // 請求ステータス
-  billing_amount         Int? // 請求金額（円単位）
-  notes                  String?       @db.Text // 備考
-  created_at             DateTime      @default(now())
-  updated_at             DateTime      @updatedAt
-  deleted_at             DateTime?
+  id                            String        @id @default(uuid()) @map("collective_burial_id")
+  contract_plot_id              String        @unique // 契約区画ID（1対1リレーション）
+  burial_capacity               Int // 埋葬上限人数
+  current_burial_count          Int           @default(0) // 現在埋葬人数（BuriedPersonsから自動集計）
+  capacity_reached_date         DateTime?     @db.Date // 上限到達日（埋葬状況の記録用。請求予定日には使わない #164）
+  validity_period_years         Int // 有効期間（年単位）
+  // 請求予定日（合祀予定日）= カウントダウン起点 + 有効期間。
+  // 起点は「最終納骨者の埋葬日、無ければ契約日」（議事録 2026-07-21 §1 / #164）
+  billing_scheduled_date        DateTime?     @db.Date
+  // 請求予定日を業務が手動指定したか（例外運用: 決まった年数より短くする等。業務確認 2026-06-07 Q17）。
+  // true の間は自動再計算で上書きしない。false なら埋葬者の変更に追随して再計算する。
+  billing_scheduled_date_manual Boolean       @default(false)
+  billing_status                BillingStatus @default(pending) // 請求ステータス
+  billing_amount                Int? // 請求金額（円単位）
+  notes                         String?       @db.Text // 備考
+  created_at                    DateTime      @default(now())
+  updated_at                    DateTime      @updatedAt
+  deleted_at                    DateTime?
 
   // Relations
   contractPlot ContractPlot @relation(fields: [contract_plot_id], references: [id], onDelete: Cascade)

@@ -103,6 +103,8 @@ const mockPrisma: any = {
   },
   buriedPerson: {
     findMany: jest.fn(),
+    // 最終納骨者の埋葬日取得（議事録 2026-07-21 §1）。既定値は beforeEach で設定する
+    findFirst: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
     updateMany: jest.fn(),
@@ -241,9 +243,29 @@ describe('Plot Controller (ContractPlot Model)', () => {
       deleted_at: null,
       is_terminated: false,
     });
+    // 合祀カウントダウンの起点は「最終納骨者の埋葬日、無ければ契約日」（議事録 2026-07-21 §1）。
+    // 既定は最終納骨者なし＝契約日起点。最終納骨日起点のケースは個別テストで上書きする。
+    mockPrisma.buriedPerson.findFirst.mockResolvedValue(null);
   });
 
   describe('getPlots', () => {
+    // 一覧は埋葬者を1人1行に展開して表示するため、順序が安定しないとリクエストごとに
+    // 行が入れ替わって目視確認できない。旧システムと同じ納骨順に固定する。
+    it('埋葬者を納骨順（埋葬日昇順→登録順）で取得すること', async () => {
+      mockPrisma.contractPlot.findMany.mockResolvedValue([]);
+      mockPrisma.contractPlot.count.mockResolvedValue(0);
+      mockRequest.query = { page: '1', limit: '10' };
+
+      await getPlots(mockRequest as Request, mockResponse as Response, mockNext);
+
+      const findManyArg = mockPrisma.contractPlot.findMany.mock.calls[0][0];
+      expect(findManyArg.include.buriedPersons.orderBy).toEqual([
+        { burial_date: 'asc' },
+        { created_at: 'asc' },
+      ]);
+      expect(mockNext).not.toHaveBeenCalled();
+    });
+
     it('should return list of contract plots', async () => {
       const mockContractPlots = [
         {

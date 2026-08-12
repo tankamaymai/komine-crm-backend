@@ -33,9 +33,12 @@ const mockPrisma: any = {
   },
   contractPlot: {
     findFirst: jest.fn(),
+    findUnique: jest.fn(),
   },
   buriedPerson: {
     count: jest.fn(),
+    // 最終納骨者の埋葬日取得（議事録 2026-07-21 §1）。本ファイルは最終納骨者なしで検証する
+    findFirst: jest.fn(),
   },
 };
 
@@ -64,6 +67,7 @@ const CB_ROW = {
   capacity_reached_date: null,
   validity_period_years: 33,
   billing_scheduled_date: null,
+  billing_scheduled_date_manual: false,
   billing_status: 'pending',
   billing_amount: null,
   notes: null,
@@ -86,6 +90,11 @@ describe('collectiveBurialController — バグ修正回帰', () => {
     mockResponse = { status: responseStatus, json: responseJson };
     mockNext = jest.fn();
     mockRequest = { params: {}, body: {}, query: {} };
+    // 最終納骨者は未確定（＝請求予定日は契約日起点にフォールバックする）
+    mockPrisma.buriedPerson.findFirst.mockResolvedValue(null);
+    mockPrisma.contractPlot.findUnique.mockResolvedValue({
+      contract_date: new Date('2026-04-01T00:00:00Z'),
+    });
   });
 
   describe('createCollectiveBurial (#202)', () => {
@@ -196,7 +205,9 @@ describe('collectiveBurialController — バグ修正回帰', () => {
       const syncCall = mockPrisma.collectiveBurial.update.mock.calls[1][0];
       expect(syncCall.data).toMatchObject({ current_burial_count: 7 });
       expect(syncCall.data.capacity_reached_date).toBeInstanceOf(Date);
-      expect(syncCall.data.billing_scheduled_date).toBeUndefined();
+      // 再同期でも起点は「最終納骨者の埋葬日、無ければ契約日」。本ケースは最終納骨者なしで
+      // 契約日 2026-04-01 + 33年となり、復活 update と同じ値に落ち着く（上限到達日は起点にしない）
+      expect(syncCall.data.billing_scheduled_date.toISOString()).toBe('2059-04-01T00:00:00.000Z');
 
       // レスポンスは再同期後の値（count=0 固定でない）こと
       expect(responseStatus).toHaveBeenCalledWith(201);
@@ -206,7 +217,7 @@ describe('collectiveBurialController — バグ修正回帰', () => {
   });
 
   describe('syncBurialCount (#203)', () => {
-    it('上限到達後に人数が減ったら上限到達日がリセットされる（請求予定日は契約日起点で維持 #164）', async () => {
+    it('上限到達後に人数が減ったら上限到達日がリセットされる（請求予定日は契約日起点で再計算 #164）', async () => {
       mockPrisma.collectiveBurial.findFirst.mockResolvedValue({
         ...CB_ROW,
         current_burial_count: 10,
@@ -239,9 +250,11 @@ describe('collectiveBurialController — バグ修正回帰', () => {
           }),
         })
       );
-      // 請求予定日は契約日起点（#164）のため埋葬数の増減ではリセットされない
+      // 請求予定日は「最終納骨者の埋葬日、無ければ契約日」起点で再計算される
+      // （議事録 2026-07-21 §1）。本ケースは最終納骨者なし・契約日 2026-04-01 なので
+      //  2026-04-01 + 33年。上限人数の増減そのものが起点になるわけではない（#164）
       const syncData = mockPrisma.collectiveBurial.update.mock.calls[0][0].data;
-      expect(syncData.billing_scheduled_date).toBeUndefined();
+      expect(syncData.billing_scheduled_date.toISOString()).toBe('2059-04-01T00:00:00.000Z');
       expect(responseJson).toHaveBeenCalledWith(
         expect.objectContaining({
           success: true,
@@ -255,7 +268,7 @@ describe('collectiveBurialController — バグ修正回帰', () => {
       );
     });
 
-    it('上限到達（初回）で上限到達日がセットされる（請求予定日は変更しない #164）', async () => {
+    it('上限到達（初回）で上限到達日がセットされる（請求予定日は上限到達日起点にしない #164）', async () => {
       mockPrisma.collectiveBurial.findFirst.mockResolvedValue(CB_ROW);
       mockPrisma.collectiveBurial.findUnique.mockResolvedValue(CB_ROW);
       mockPrisma.buriedPerson.count.mockResolvedValue(10);
@@ -276,8 +289,10 @@ describe('collectiveBurialController — バグ修正回帰', () => {
           }),
         })
       );
+      // 起点は最終納骨者の埋葬日（なし）→契約日 2026-04-01 + 33年。
+      // 上限到達日そのものは起点にしない（#164）
       const syncData = mockPrisma.collectiveBurial.update.mock.calls[0][0].data;
-      expect(syncData.billing_scheduled_date).toBeUndefined();
+      expect(syncData.billing_scheduled_date.toISOString()).toBe('2059-04-01T00:00:00.000Z');
       expect(responseJson).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ capacityReached: true }),

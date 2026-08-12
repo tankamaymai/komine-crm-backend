@@ -6,7 +6,11 @@ import { Request, Response, NextFunction } from 'express';
 import { BillingStatus } from '@prisma/client';
 import { NotFoundError, ValidationError } from '../middleware/errorHandler';
 import prisma from '../db/prisma';
-import { updateCollectiveBurialCount, resolveBillingScheduledDate } from './utils';
+import {
+  updateCollectiveBurialCount,
+  resolveBillingScheduledDate,
+  findFinalBurialDate,
+} from './utils';
 
 /** リクエストボディの型（Express の req.body は any のため、境界で明示的に型付けする） */
 interface CreateCollectiveBurialBody {
@@ -137,7 +141,9 @@ export const getCollectiveBurialList = async (
               },
               buriedPersons: {
                 where: { deleted_at: null },
-                select: { id: true, name: true, burial_date: true },
+                // is_final_burial: 画面側で合祀予定日の起点（最終納骨日 or 契約日）を
+                // backend と同じ規則で表示するために返す（議事録 2026-07-21 §1）
+                select: { id: true, name: true, burial_date: true, is_final_burial: true },
               },
             },
           },
@@ -173,6 +179,7 @@ export const getCollectiveBurialList = async (
           id: bp.id,
           name: bp.name,
           burialDate: bp.burial_date?.toISOString().split('T')[0] || null,
+          isFinalBurial: bp.is_final_burial,
         })),
         createdAt: item.created_at.toISOString(),
         updatedAt: item.updated_at.toISOString(),
@@ -278,6 +285,7 @@ export const getCollectiveBurialById = async (
           age: bp.age,
           gender: bp.gender,
           burialDate: bp.burial_date?.toISOString().split('T')[0] || null,
+          isFinalBurial: bp.is_final_burial,
           notes: bp.notes,
         })),
         createdAt: collectiveBurial.created_at.toISOString(),
@@ -447,18 +455,24 @@ export const updateCollectiveBurial = async (
         : null;
     }
     if (billingScheduledDate !== undefined) {
-      // 手動指定（例外運用: 決まった年数より短くする等、業務確認 2026-06-07 Q17）を優先
+      // 手動指定（例外運用: 決まった年数より短くする等、業務確認 2026-06-07 Q17）を優先。
+      // 以後は埋葬者の変更に追随した自動再計算で上書きしないよう手動フラグを立てる。
+      // 日付を null でクリアした場合は自動算出へ戻す意図と解釈しフラグを下ろす。
       updateData['billing_scheduled_date'] = billingScheduledDate
         ? new Date(billingScheduledDate)
         : null;
+      updateData['billing_scheduled_date_manual'] = billingScheduledDate !== null;
     } else if (
       validityPeriodYears !== undefined &&
-      validityPeriodYears !== existing.validity_period_years
+      validityPeriodYears !== existing.validity_period_years &&
+      !existing.billing_scheduled_date_manual
     ) {
-      // 有効期間が変わった場合は契約日起点で請求予定日を再計算する（#164）
+      // 有効期間が変わった場合は請求予定日を再計算する。
+      // 起点は「最終納骨者の埋葬日、無ければ契約日」（議事録 2026-07-21 §1 / #164）
       updateData['billing_scheduled_date'] = resolveBillingScheduledDate(
         existing.contractPlot.contract_date,
-        validityPeriodYears
+        validityPeriodYears,
+        await findFinalBurialDate(prisma, existing.contract_plot_id)
       );
     }
     if (billingStatus !== undefined) updateData['billing_status'] = billingStatus;

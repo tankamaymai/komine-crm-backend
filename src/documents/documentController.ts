@@ -82,7 +82,7 @@ const TEMPLATE_TYPE_TO_NAME: Record<DocumentTemplateType, string> = {
   postcard: 'はがき',
   permit: '許可証',
   'envelope-letter': '封筒書',
-  'envelope-base': '封筒台',
+  'envelope-base': '封筒大',
   'payment-guide': 'お支払い方法のご案内',
 };
 

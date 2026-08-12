@@ -68,7 +68,7 @@ describe('permitPdfService フォントサブセット（#237）', () => {
     expect(result.buffer!.length).toBeLessThan(MAX_SUBSET_SIZE);
   });
 
-  it('封筒台PDFが生成され、サブセット化でサイズが縮小されること', async () => {
+  it('封筒大PDFが生成され、サブセット化でサイズが縮小されること', async () => {
     const result = await generateEnvelopeBasePdf(data);
 
     expect(result.success).toBe(true);

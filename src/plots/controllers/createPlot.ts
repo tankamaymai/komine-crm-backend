@@ -409,6 +409,7 @@ export async function createPlotCore(
           chief_mourner_name: bp.chiefMournerName || null,
           chief_mourner_relationship: bp.chiefMournerRelationship || null,
           validity_period_years_override: bp.validityPeriodYearsOverride ?? null,
+          is_final_burial: bp.isFinalBurial ?? false,
           notes: bp.notes || null,
         },
       });
@@ -421,6 +422,7 @@ export async function createPlotCore(
           death_date: created.death_date?.toISOString() ?? null,
           burial_date: created.burial_date?.toISOString() ?? null,
           validity_period_years_override: created.validity_period_years_override,
+          is_final_burial: created.is_final_burial,
         },
       });
     }

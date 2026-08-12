@@ -42,9 +42,179 @@
     {
       "name": "Yucho",
       "description": "ゆうちょ連携（自動払込み用CSV生成）"
+    },
+    {
+      "name": "Customers",
+      "description": "顧客（解約者参照）"
     }
   ],
   "paths": {
+    "/api/v1/customers/terminated": {
+      "get": {
+        "tags": [
+          "Customers"
+        ],
+        "summary": "解約者一覧・検索",
+        "description": "解約者（is_terminated=true 顧客、レガシー del_flg=2 由来 #129）を一覧・検索する（#311）。\n解約者は契約・請求・入金にリンクされない独立した顧客レコードのため、\n台帳問い合わせ（/plots）には現れず、本エンドポイントが唯一の参照経路。\nnotes には旧区画手がかり（旧区画cd: X / 区画No: legacy-X）が記録済み。\n解約者に紐づく家族連絡先（contract_plot_id=null、customer 直リンク）も併せて返す。\n",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "default": "1"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "default": "20"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "description": "氏名・カナ・電話番号・備考（旧区画手がかり）・旧檀家コードの部分一致検索",
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "解約者一覧",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "nameKana": {
+                                "type": "string",
+                                "nullable": true
+                              },
+                              "postalCode": {
+                                "type": "string",
+                                "nullable": true
+                              },
+                              "address": {
+                                "type": "string",
+                                "nullable": true
+                              },
+                              "phoneNumber": {
+                                "type": "string",
+                                "nullable": true
+                              },
+                              "email": {
+                                "type": "string",
+                                "nullable": true
+                              },
+                              "notes": {
+                                "type": "string",
+                                "nullable": true,
+                                "description": "旧区画手がかり（旧区画cd / 区画No legacy-X）を含む"
+                              },
+                              "legacyDankaCd": {
+                                "type": "integer",
+                                "nullable": true
+                              },
+                              "createdAt": {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              "familyContacts": {
+                                "type": "array",
+                                "description": "解約者に紐づく家族連絡先（区画リンクなし",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "id": {
+                                      "type": "string",
+                                      "format": "uuid"
+                                    },
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "nameKana": {
+                                      "type": "string",
+                                      "nullable": true
+                                    },
+                                    "relationship": {
+                                      "type": "string"
+                                    },
+                                    "phoneNumber": {
+                                      "type": "string",
+                                      "nullable": true
+                                    },
+                                    "address": {
+                                      "type": "string",
+                                      "nullable": true
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "pagination": {
+                          "type": "object",
+                          "properties": {
+                            "page": {
+                              "type": "integer"
+                            },
+                            "limit": {
+                              "type": "integer"
+                            },
+                            "total": {
+                              "type": "integer"
+                            },
+                            "totalPages": {
+                              "type": "integer"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
     "/api/v1/auth/login": {
       "post": {
         "tags": [
@@ -185,6 +355,42 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "graveKind",
+            "in": "query",
+            "description": "区画区分フィルタ（grave_kind、レガシー tinyint 値）",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "graveKubun",
+            "in": "query",
+            "description": "区画区分フィルタ（grave_kubun、レガシー tinyint 値）",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "graveType",
+            "in": "query",
+            "description": "区画区分フィルタ（grave_type、レガシー tinyint 値）",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "contractStatus",
+            "in": "query",
+            "description": "契約ステータスフィルタ（台帳問い合わせはvacant非表示のためactive/terminatedのみ指定可）",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "active",
+                "terminated"
+              ]
+            }
           }
         ],
         "responses": {
@@ -285,283 +491,21 @@
         }
       }
     },
-    "/api/v1/plots/bulk": {
-      "post": {
+    "/api/v1/plots/grave-classifications": {
+      "get": {
         "tags": [
           "Plots"
         ],
-        "summary": "区画情報一括登録",
-        "description": "複数の区画を一括登録します。1件登録（POST /plots）と同等のフィールド構成で、\n最大500件まで一度に登録できます。全件が1つのトランザクションで実行され、\n1件でもエラーがあれば全件ロールバックします。\nmanager または admin 権限が必要です。\n",
+        "summary": "区画区分 distinct 値取得",
+        "description": "ContractPlot に存在する grave_kind / grave_kubun / grave_type の\n一意な値の一覧を返します。区画一覧画面のフィルタ select 用。\nmaster 化されるまでの暫定エンドポイントです。\n",
         "security": [
           {
             "bearerAuth": []
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "items"
-                ],
-                "properties": {
-                  "items": {
-                    "type": "array",
-                    "minItems": 1,
-                    "maxItems": 500,
-                    "items": {
-                      "type": "object",
-                      "description": "CreatePlot リクエスト（物理区画 + 契約区画 + 販売契約 + 顧客 + オプション）+\nfamilyContacts[] / buriedPersons[] / constructionInfos[] / gravestoneInfo\n",
-                      "properties": {
-                        "physicalPlot": {
-                          "type": "object"
-                        },
-                        "contractPlot": {
-                          "type": "object"
-                        },
-                        "saleContract": {
-                          "type": "object"
-                        },
-                        "customer": {
-                          "type": "object"
-                        },
-                        "workInfo": {
-                          "type": "object"
-                        },
-                        "billingInfo": {
-                          "type": "object"
-                        },
-                        "usageFee": {
-                          "type": "object"
-                        },
-                        "managementFee": {
-                          "type": "object"
-                        },
-                        "collectiveBurial": {
-                          "type": "object"
-                        },
-                        "familyContacts": {
-                          "type": "array",
-                          "items": {
-                            "type": "object"
-                          }
-                        },
-                        "buriedPersons": {
-                          "type": "array",
-                          "items": {
-                            "type": "object"
-                          }
-                        },
-                        "constructionInfos": {
-                          "type": "array",
-                          "items": {
-                            "type": "object"
-                          }
-                        },
-                        "gravestoneInfo": {
-                          "type": "object"
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "一括登録成功",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "example": true
-                    },
-                    "data": {
-                      "type": "object",
-                      "properties": {
-                        "totalRequested": {
-                          "type": "integer",
-                          "example": 10
-                        },
-                        "created": {
-                          "type": "integer",
-                          "example": 10
-                        },
-                        "results": {
-                          "type": "array",
-                          "items": {
-                            "type": "object",
-                            "properties": {
-                              "row": {
-                                "type": "integer"
-                              },
-                              "id": {
-                                "type": "string",
-                                "format": "uuid"
-                              },
-                              "physicalPlotId": {
-                                "type": "string",
-                                "format": "uuid"
-                              },
-                              "plotNumber": {
-                                "type": "string",
-                                "nullable": true
-                              }
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "バリデーションエラー / バッチ内重複 / 既存区画番号と衝突",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "example": false
-                    },
-                    "error": {
-                      "type": "object",
-                      "properties": {
-                        "code": {
-                          "type": "string"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "details": {
-                          "type": "array",
-                          "items": {
-                            "type": "object",
-                            "properties": {
-                              "row": {
-                                "type": "integer"
-                              },
-                              "field": {
-                                "type": "string"
-                              },
-                              "message": {
-                                "type": "string"
-                              }
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          }
-        }
-      },
-      "put": {
-        "tags": [
-          "Plots"
-        ],
-        "summary": "区画情報一括編集",
-        "description": "既存の契約区画を plotNumber（区画番号）でマッチングして一括更新します。\n未指定フィールドは変更されず、null 明示フィールドはクリアされます。\n最大500件まで一度に編集可能。トランザクションで all-or-nothing 処理。\nmanager または admin 権限が必要です。\n",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "items"
-                ],
-                "properties": {
-                  "items": {
-                    "type": "array",
-                    "minItems": 1,
-                    "maxItems": 500,
-                    "items": {
-                      "type": "object",
-                      "required": [
-                        "plotNumber"
-                      ],
-                      "description": "plotNumber（マッチングキー、必須）+ UpdatePlot 準拠の部分更新フィールド。\n空欄（未指定）= 変更しない、null 明示 = クリア。\n",
-                      "properties": {
-                        "plotNumber": {
-                          "type": "string",
-                          "description": "マッチングキーとなる区画番号"
-                        },
-                        "physicalPlot": {
-                          "type": "object"
-                        },
-                        "contractPlot": {
-                          "type": "object"
-                        },
-                        "saleContract": {
-                          "type": "object"
-                        },
-                        "customer": {
-                          "type": "object"
-                        },
-                        "workInfo": {
-                          "type": "object"
-                        },
-                        "billingInfo": {
-                          "type": "object"
-                        },
-                        "usageFee": {
-                          "type": "object"
-                        },
-                        "managementFee": {
-                          "type": "object"
-                        },
-                        "buriedPersons": {
-                          "type": "array",
-                          "items": {
-                            "type": "object"
-                          }
-                        },
-                        "constructionInfos": {
-                          "type": "array",
-                          "items": {
-                            "type": "object"
-                          }
-                        },
-                        "collectiveBurial": {
-                          "type": "object"
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
-            "description": "一括編集成功",
+            "description": "取得成功",
             "content": {
               "application/json": {
                 "schema": {
@@ -574,28 +518,22 @@
                     "data": {
                       "type": "object",
                       "properties": {
-                        "totalRequested": {
-                          "type": "integer"
-                        },
-                        "updated": {
-                          "type": "integer"
-                        },
-                        "results": {
+                        "graveKinds": {
                           "type": "array",
                           "items": {
-                            "type": "object",
-                            "properties": {
-                              "row": {
-                                "type": "integer"
-                              },
-                              "id": {
-                                "type": "string",
-                                "format": "uuid"
-                              },
-                              "plotNumber": {
-                                "type": "string"
-                              }
-                            }
+                            "type": "integer"
+                          }
+                        },
+                        "graveKubuns": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
+                        },
+                        "graveTypes": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
                           }
                         }
                       }
@@ -604,9 +542,6 @@
                 }
               }
             }
-          },
-          "400": {
-            "description": "バリデーションエラー / バッチ内重複 / 区画番号が DB に存在しない"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
@@ -617,13 +552,13 @@
         }
       }
     },
-    "/api/v1/plots/{id}": {
+    "/api/v1/plots/vacant": {
       "get": {
         "tags": [
           "Plots"
         ],
-        "summary": "契約区画詳細取得",
-        "description": "指定した契約区画の詳細情報を取得。物理区画、顧客、販売契約、オプション情報を含む。",
+        "summary": "空き区画一覧取得",
+        "description": "空き面積が残っている物理区画の一覧を返します。新規顧客登録時の区画指定を\n手入力不可の選択式にするための選択肢です（議事録 2026-07-21 §6）。\n\n空き判定は在庫系（GET /plots/{id}/inventory・契約面積検証）と同じ基準:\n`空き面積 = 総面積 − active 契約の契約面積合計 > 0`。\nvacant の器契約（空き区画の表現方式）と terminated（解約済み）は割当に数えません。\n\n実データで空き区画は約2,500件、単一の区画名でも最大647件あるため、\nareaName で絞り、必要に応じて search で更に絞って使ってください。\n",
         "security": [
           {
             "bearerAuth": []
@@ -631,13 +566,41 @@
         ],
         "parameters": [
           {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "description": "契約区画ID（UUID）",
+            "in": "query",
+            "name": "areaName",
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "maxLength": 100
+            },
+            "description": "区画名（エリア）の完全一致",
+            "example": "凛B"
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "schema": {
+              "type": "string",
+              "maxLength": 50
+            },
+            "description": "区画番号の部分一致（表示番号・内部番号の両方を対象）"
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
             }
           }
         ],
@@ -654,7 +617,122 @@
                       "example": true
                     },
                     "data": {
-                      "$ref": "#/components/schemas/ContractPlotDetail"
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/VacantPlotItem"
+                          }
+                        },
+                        "pagination": {
+                          "type": "object",
+                          "properties": {
+                            "page": {
+                              "type": "integer"
+                            },
+                            "limit": {
+                              "type": "integer"
+                            },
+                            "total": {
+                              "type": "integer",
+                              "description": "空き区画の総件数"
+                            },
+                            "totalPages": {
+                              "type": "integer"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v1/plots/{id}": {
+      "get": {
+        "tags": [
+          "Plots"
+        ],
+        "summary": "契約区画詳細取得",
+        "description": "指定した契約区画の詳細情報を取得。物理区画、顧客、販売契約、オプション情報を含む。includeHistory=true を指定すると変更履歴（histories）も同梱して返す。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "契約区画ID（UUID）",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "includeHistory",
+            "in": "query",
+            "required": false,
+            "description": "true を指定するとレスポンスの data.histories に変更履歴を同梱する。",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          {
+            "name": "historyLimit",
+            "in": "query",
+            "required": false,
+            "description": "includeHistory=true のときに同梱する履歴の最大件数。",
+            "schema": {
+              "type": "integer",
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "取得成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/ContractPlotDetail"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "histories": {
+                              "type": "array",
+                              "description": "includeHistory=true のときのみ返却される変更履歴。",
+                              "items": {
+                                "$ref": "#/components/schemas/History"
+                              }
+                            }
+                          }
+                        }
+                      ]
                     }
                   }
                 }
@@ -810,6 +888,510 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/v1/plots/{id}/history": {
+      "get": {
+        "tags": [
+          "Plots"
+        ],
+        "summary": "契約区画の変更履歴取得",
+        "description": "指定した契約区画に関連する変更履歴をページネーション付きで取得。物理区画自体の履歴は当該物理区画分のみ含み、他契約への漏れを防ぐ。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "契約区画ID（UUID）",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "ページ番号（1始まり）",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "1ページあたりの件数（最大100）",
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "entityType",
+            "in": "query",
+            "required": false,
+            "description": "エンティティ種別でフィルタ（例: ContractPlot, Customer, BuriedPerson, FamilyContact, PhysicalPlot）",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "取得成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "histories": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/History"
+                          }
+                        },
+                        "pagination": {
+                          "type": "object",
+                          "properties": {
+                            "total": {
+                              "type": "integer"
+                            },
+                            "page": {
+                              "type": "integer"
+                            },
+                            "limit": {
+                              "type": "integer"
+                            },
+                            "totalPages": {
+                              "type": "integer"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/v1/plots/{id}/terminate": {
+      "post": {
+        "tags": [
+          "Plots"
+        ],
+        "summary": "契約区画の解約（active → terminated）",
+        "description": "active 状態の契約区画を terminated（解約）に遷移させる。\n論理削除（DELETE /plots/{id}）と異なり deleted_at は変更しないため、\n解約後も履歴・詳細・一覧から参照でき、誤操作時は /restore で復活できる。\nreason は履歴に記録するため必須（1〜200文字、空白のみは不可）。\n現在のステータスが active でない場合は 409 を返す。\n",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "契約区画ID（UUID）",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "reason"
+                ],
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "description": "解約理由（履歴に記録される）",
+                    "example": "利用者からの解約申請のため"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "解約成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string",
+                          "example": "契約区画を解約しました"
+                        },
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "contractStatus": {
+                          "type": "string",
+                          "enum": [
+                            "vacant",
+                            "active",
+                            "terminated"
+                          ],
+                          "example": "terminated"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "バリデーションエラー（reason 欠落 / 長すぎ等）",
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "active 以外のステータスからの解約",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/plots/{id}/restore": {
+      "post": {
+        "tags": [
+          "Plots"
+        ],
+        "summary": "契約区画の復活（terminated → active）",
+        "description": "terminated 状態の契約区画を active に戻す（誤操作リカバリ用）。\nreason は履歴に記録するため必須（1〜200文字、空白のみは不可）。\n現在のステータスが terminated でない場合は 409 を返す。\n",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "契約区画ID（UUID）",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "reason"
+                ],
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "description": "復活理由（履歴に記録される）",
+                    "example": "担当者の入力ミスのため復活"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "復活成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string",
+                          "example": "契約区画を復活しました"
+                        },
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "contractStatus": {
+                          "type": "string",
+                          "enum": [
+                            "vacant",
+                            "active",
+                            "terminated"
+                          ],
+                          "example": "active"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "バリデーションエラー（reason 欠落 / 長すぎ等）",
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "現在のステータスが terminated でないため復活不可",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/plots/{id}/change-contractor": {
+      "post": {
+        "tags": [
+          "Plots"
+        ],
+        "summary": "名義変更（契約者roleの交代）",
+        "description": "同一販売契約上で契約者（contractor role）を旧契約者から新契約者へ交代させる（#310）。\n契約・申込者（applicant role）・区画情報は不変のまま残り、\n変更は履歴に change_reason「名義変更」で記録される（過去の契約者を遡れる）。\n新契約者は既存顧客の指定（newCustomerId）か新規顧客の作成（newCustomer）の\nどちらか一方のみ指定可能。\n現在のステータスが active でない場合、または現在の契約者が存在しない場合は 409 を返す。\n",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "契約区画ID（UUID）",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "newCustomerId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "新契約者にする既存顧客のID（newCustomer と排他）"
+                  },
+                  "newCustomer": {
+                    "type": "object",
+                    "description": "新契約者として新規作成する顧客情報（newCustomerId と排他）",
+                    "required": [
+                      "name",
+                      "nameKana",
+                      "postalCode",
+                      "address"
+                    ],
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "maxLength": 100
+                      },
+                      "nameKana": {
+                        "type": "string",
+                        "maxLength": 100
+                      },
+                      "postalCode": {
+                        "type": "string"
+                      },
+                      "address": {
+                        "type": "string",
+                        "maxLength": 200
+                      },
+                      "phoneNumber": {
+                        "type": "string",
+                        "nullable": true
+                      }
+                    }
+                  },
+                  "changeDate": {
+                    "type": "string",
+                    "format": "date",
+                    "nullable": true,
+                    "description": "名義変更日（旧roleのrole_end_date / 新roleのrole_start_date。省略時は当日）"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "description": "名義変更理由（任意。履歴の change_reason に「名義変更」へ付記）"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "名義変更成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "message": {
+                          "type": "string",
+                          "example": "名義変更を実施しました"
+                        },
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "oldContractor": {
+                          "type": "object",
+                          "properties": {
+                            "customerId": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "name": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "newContractor": {
+                          "type": "object",
+                          "properties": {
+                            "customerId": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "roleId": {
+                              "type": "string",
+                              "format": "uuid"
+                            }
+                          }
+                        },
+                        "changeDate": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "バリデーションエラー（newCustomerId/newCustomer の排他違反、解約済み顧客の指定等）",
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "active 以外のステータス / 現契約者不在 / 指定顧客が既に契約者",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -1013,7 +1595,8 @@
                 "第2期",
                 "第3期",
                 "第3期樹林部",
-                "第4期"
+                "第4期",
+                "その他"
               ]
             }
           }
@@ -1079,7 +1662,8 @@
                 "第2期",
                 "第3期",
                 "第3期樹林部",
-                "第4期"
+                "第4期",
+                "その他"
               ]
             }
           },
@@ -1220,7 +1804,8 @@
                 "第2期",
                 "第3期",
                 "第3期樹林部",
-                "第4期"
+                "第4期",
+                "その他"
               ]
             }
           },
@@ -2261,7 +2846,7 @@
           "Documents"
         ],
         "summary": "ダウンロードURL取得",
-        "description": "ファイルのダウンロードURL（Pre-signed URL）を取得",
+        "description": "ファイルのダウンロードURL（認証付きファイル配信エンドポイントの相対URL）を取得",
         "security": [
           {
             "bearerAuth": []
@@ -2297,7 +2882,8 @@
                         "url": {
                           "type": "string",
                           "format": "uri",
-                          "description": "ダウンロードURL（有効期限15分）"
+                          "description": "ファイル配信エンドポイントの相対URL（要Bearer認証）",
+                          "example": "/api/v1/documents/123e4567-e89b-42d3-a456-426614174000/file"
                         },
                         "fileName": {
                           "type": "string",
@@ -2309,8 +2895,8 @@
                         },
                         "expiresIn": {
                           "type": "integer",
-                          "description": "有効期限（秒）",
-                          "example": 900
+                          "description": "有効期限（秒）。0は無期限（認証付きエンドポイントのため）",
+                          "example": 0
                         }
                       }
                     }
@@ -2328,13 +2914,13 @@
         }
       }
     },
-    "/api/v1/documents/file/{fileKey}": {
+    "/api/v1/documents/{id}/file": {
       "get": {
         "tags": [
           "Documents"
         ],
-        "summary": "ローカルファイルダウンロード",
-        "description": "ローカルストレージからファイルを直接ダウンロード（開発環境用）",
+        "summary": "ファイル本体ダウンロード",
+        "description": "アップロードされたファイル本体をローカルストレージ（UPLOAD_DIR）から配信",
         "security": [
           {
             "bearerAuth": []
@@ -2342,12 +2928,13 @@
         ],
         "parameters": [
           {
-            "name": "fileKey",
+            "name": "id",
             "in": "path",
             "required": true,
-            "description": "ファイルキー",
+            "description": "書類ID",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -2413,6 +3000,252 @@
         }
       }
     },
+    "/api/v1/masters/relationship": {
+      "get": {
+        "tags": [
+          "Masters"
+        ],
+        "summary": "続柄マスタ一覧取得",
+        "description": "有効な続柄マスタデータを表示順で取得（レガシー sykbnn KBNNO=2009 由来）",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "続柄マスタ一覧",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/RelationshipMaster"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/v1/masters/contractor": {
+      "get": {
+        "tags": [
+          "Masters"
+        ],
+        "summary": "工事業者マスタ一覧取得",
+        "description": "有効な工事業者マスタデータを表示順で取得（ConstructionInfo.contractor の select 候補）",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "工事業者マスタ一覧",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ContractorMaster"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/v1/masters/direction": {
+      "get": {
+        "tags": [
+          "Masters"
+        ],
+        "summary": "方角マスタ一覧取得",
+        "description": "有効な方角マスタデータを表示順で取得（レガシー sykbnn KBNNO=2024 由来）。code は GravestoneInfo.direction_id の int 文字列。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "方角マスタ一覧",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DirectionMaster"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/v1/masters/position": {
+      "get": {
+        "tags": [
+          "Masters"
+        ],
+        "summary": "位置マスタ一覧取得",
+        "description": "有効な位置マスタデータを表示順で取得（レガシー sykbnn KBNNO=2025 由来）。code は GravestoneInfo.position_id の int 文字列。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "位置マスタ一覧",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PositionMaster"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/v1/masters/validity-period": {
+      "get": {
+        "tags": [
+          "Masters"
+        ],
+        "summary": "合祀年数マスタ一覧取得",
+        "description": "合祀までの年数（13/15/24/33）の選択肢を表示順で取得（#343, komine-docs#10 Q17）。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "合祀年数マスタ一覧",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MasterItem"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/v1/masters/change-reason": {
+      "get": {
+        "tags": [
+          "Masters"
+        ],
+        "summary": "変更理由マスタ一覧取得",
+        "description": "変更履歴の理由（名義変更/住所変更/解約/合祀 等）の選択肢を表示順で取得（#344, komine-docs#10 項目4）。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "変更理由マスタ一覧",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MasterItem"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
     "/api/v1/masters/all": {
       "get": {
         "tags": [
@@ -2444,6 +3277,18 @@
                           "type": "array",
                           "items": {
                             "$ref": "#/components/schemas/SectionNameMaster"
+                          }
+                        },
+                        "relationship": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/RelationshipMaster"
+                          }
+                        },
+                        "contractor": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/ContractorMaster"
                           }
                         }
                       }
@@ -2856,6 +3701,160 @@
           }
         }
       },
+      "RelationshipMaster": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 1
+          },
+          "code": {
+            "type": "string",
+            "example": "spouse"
+          },
+          "name": {
+            "type": "string",
+            "example": "配偶者"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "sortOrder": {
+            "type": "integer",
+            "nullable": true,
+            "example": 1
+          },
+          "isActive": {
+            "type": "boolean",
+            "example": true
+          }
+        }
+      },
+      "ContractorMaster": {
+        "type": "object",
+        "description": "工事業者マスタ (ConstructionInfo.contractor の select 候補)",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 1
+          },
+          "code": {
+            "type": "string",
+            "example": "placeholder-1"
+          },
+          "name": {
+            "type": "string",
+            "example": "小嶺石材"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "sortOrder": {
+            "type": "integer",
+            "nullable": true,
+            "example": 1
+          },
+          "isActive": {
+            "type": "boolean",
+            "example": true
+          }
+        }
+      },
+      "DirectionMaster": {
+        "type": "object",
+        "description": "方角マスタ。code は GravestoneInfo.direction_id (レガシー houi_id) の int 文字列。",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 1
+          },
+          "code": {
+            "type": "string",
+            "example": "1"
+          },
+          "name": {
+            "type": "string",
+            "example": "東"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "sortOrder": {
+            "type": "integer",
+            "nullable": true,
+            "example": 1
+          },
+          "isActive": {
+            "type": "boolean",
+            "example": true
+          }
+        }
+      },
+      "PositionMaster": {
+        "type": "object",
+        "description": "位置マスタ。code は GravestoneInfo.position_id (レガシー ichi_id) の int 文字列。",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 1
+          },
+          "code": {
+            "type": "string",
+            "example": "1"
+          },
+          "name": {
+            "type": "string",
+            "example": "角"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "sortOrder": {
+            "type": "integer",
+            "nullable": true,
+            "example": 1
+          },
+          "isActive": {
+            "type": "boolean",
+            "example": true
+          }
+        }
+      },
+      "MasterItem": {
+        "type": "object",
+        "description": "標準マスタ項目（合祀年数・変更理由 等の共通形）。",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 1
+          },
+          "code": {
+            "type": "string",
+            "example": "13"
+          },
+          "name": {
+            "type": "string",
+            "example": "13年"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "sortOrder": {
+            "type": "integer",
+            "nullable": true,
+            "example": 13
+          },
+          "isActive": {
+            "type": "boolean",
+            "example": true
+          }
+        }
+      },
       "DocumentType": {
         "type": "string",
         "description": "書類タイプ",
@@ -2864,6 +3863,8 @@
           "postcard",
           "contract",
           "permit",
+          "envelope_letter",
+          "envelope_base",
           "other"
         ],
         "example": "invoice"
@@ -3179,7 +4180,11 @@
             "type": "string",
             "enum": [
               "invoice",
-              "postcard"
+              "postcard",
+              "permit",
+              "envelope-letter",
+              "envelope-base",
+              "payment-guide"
             ],
             "description": "テンプレートタイプ"
           },
@@ -3953,6 +4958,36 @@
           }
         }
       },
+      "VacantPlotItem": {
+        "type": "object",
+        "description": "空き区画一覧の1件（GET /plots/vacant）",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "plotNumber": {
+            "type": "string",
+            "description": "ユニークキー。移行データは legacy-{grave_cd} のため表示には使わない"
+          },
+          "displayNumber": {
+            "type": "string",
+            "nullable": true,
+            "description": "表示用区画番号（grave_name_cd 由来）"
+          },
+          "areaName": {
+            "type": "string"
+          },
+          "areaSqm": {
+            "type": "number",
+            "description": "物理区画の総面積(㎡)"
+          },
+          "availableAreaSqm": {
+            "type": "number",
+            "description": "空き面積(㎡)。部分販売済みの区画は残り面積になる"
+          }
+        }
+      },
       "BuriedPersonInfo": {
         "type": "object",
         "description": "埋葬者情報",
@@ -3999,6 +5034,10 @@
           "graveNumber": {
             "type": "string",
             "nullable": true
+          },
+          "isFinalBurial": {
+            "type": "boolean",
+            "description": "最終納骨者かどうか（議事録 2026-07-21 §1）。true の人の burialDate が 合祀カウントダウンの起点になる（未確定なら契約日起点）。"
           },
           "notes": {
             "type": "string",
@@ -4221,7 +5260,7 @@
           },
           "contracts": {
             "type": "array",
-            "description": "既存契約一覧",
+            "description": "既存契約一覧（vacant/terminated 含む。在庫計算は active のみで算定）",
             "items": {
               "type": "object",
               "properties": {
@@ -4233,12 +5272,18 @@
                   "type": "number",
                   "format": "float"
                 },
-                "saleStatus": {
+                "contractStatus": {
                   "type": "string",
-                  "nullable": true
+                  "enum": [
+                    "vacant",
+                    "active",
+                    "terminated"
+                  ],
+                  "description": "契約ステータス"
                 },
                 "customerName": {
-                  "type": "string"
+                  "type": "string",
+                  "nullable": true
                 }
               }
             }
@@ -4321,6 +5366,13 @@
                 "maxLength": 200,
                 "nullable": true,
                 "example": "南側"
+              },
+              "inscription": {
+                "type": "string",
+                "description": "碑文（注意書きの一言・一覧表示用）。墓誌とは別物",
+                "maxLength": 120,
+                "nullable": true,
+                "example": "連絡時は長男へ"
               }
             }
           },
@@ -4958,6 +6010,19 @@
                   "nullable": true,
                   "example": "2020-03-20"
                 },
+                "validityPeriodYearsOverride": {
+                  "type": "integer",
+                  "description": "合祀年数の個別上書き（null=区画の合祀年数を継承）。komine-docs#10 項目8",
+                  "minimum": 1,
+                  "nullable": true,
+                  "example": 10
+                },
+                "isFinalBurial": {
+                  "type": "boolean",
+                  "description": "最終納骨者かどうか（議事録 2026-07-21 §1）。true の人の burialDate が 合祀カウントダウンの起点になる（未指定なら契約日起点）。 1契約区画につき1人まで。2人以上指定すると 400 になる。",
+                  "default": false,
+                  "example": false
+                },
                 "notes": {
                   "type": "string",
                   "description": "備考",
@@ -4989,6 +6054,12 @@
               "locationDescription": {
                 "type": "string",
                 "maxLength": 200,
+                "nullable": true
+              },
+              "inscription": {
+                "type": "string",
+                "description": "碑文（注意書きの一言・一覧表示用）。墓誌とは別物",
+                "maxLength": 120,
                 "nullable": true
               }
             }
@@ -5320,6 +6391,64 @@
                 "nullable": true
               }
             }
+          },
+          "applicant": {
+            "type": "object",
+            "description": "申込者情報。null で既存 applicant の解除、省略で変更なし（#320）",
+            "nullable": true,
+            "properties": {
+              "name": {
+                "type": "string",
+                "maxLength": 100
+              },
+              "nameKana": {
+                "type": "string",
+                "maxLength": 100
+              },
+              "phoneNumber": {
+                "type": "string",
+                "maxLength": 11,
+                "nullable": true
+              },
+              "email": {
+                "type": "string",
+                "maxLength": 254,
+                "nullable": true
+              }
+            }
+          },
+          "gravestoneInfo": {
+            "type": "object",
+            "description": "墓石情報。null で削除、省略で変更なし（#320）",
+            "nullable": true,
+            "properties": {
+              "gravestoneBase": {
+                "type": "string",
+                "nullable": true
+              },
+              "gravestoneDealer": {
+                "type": "string",
+                "nullable": true
+              },
+              "gravestoneType": {
+                "type": "string",
+                "nullable": true
+              },
+              "directionId": {
+                "type": "integer",
+                "nullable": true
+              },
+              "positionId": {
+                "type": "integer",
+                "nullable": true
+              }
+            }
+          },
+          "changeReason": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "変更理由。指定すると本更新で記録される履歴（History.change_reason）に反映される（#261）",
+            "example": "名義変更"
           }
         }
       },
@@ -5353,6 +6482,12 @@
               "locationDescription": {
                 "type": "string",
                 "maxLength": 200,
+                "nullable": true
+              },
+              "inscription": {
+                "type": "string",
+                "description": "碑文（注意書きの一言・一覧表示用）。墓誌とは別物",
+                "maxLength": 120,
                 "nullable": true
               }
             }
@@ -5556,13 +6691,14 @@
         "properties": {
           "period": {
             "type": "string",
-            "description": "期（第1期〜第4期）",
+            "description": "期（第1期〜第4期、未分類は「その他」）",
             "enum": [
               "第1期",
               "第2期",
               "第3期",
               "第3期樹林部",
-              "第4期"
+              "第4期",
+              "その他"
             ],
             "example": "第1期"
           },
@@ -5672,6 +6808,85 @@
             "type": "string",
             "description": "区画タイプ（自由、吉相、樹林、天空など）",
             "example": "自由"
+          }
+        }
+      },
+      "History": {
+        "type": "object",
+        "description": "変更履歴エントリ（日本語ラベル付与済み）。区画詳細の履歴タブで使用。",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "entityType": {
+            "type": "string",
+            "description": "エンティティ種別（ContractPlot / Customer / BuriedPerson / FamilyContact / PhysicalPlot 等）",
+            "example": "ContractPlot"
+          },
+          "entityLabel": {
+            "type": "string",
+            "description": "entityType の日本語ラベル",
+            "example": "契約区画"
+          },
+          "entityId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "actionType": {
+            "type": "string",
+            "description": "操作種別",
+            "enum": [
+              "CREATE",
+              "UPDATE",
+              "DELETE"
+            ],
+            "example": "UPDATE"
+          },
+          "changedFields": {
+            "type": "array",
+            "description": "変更されたフィールド名の配列（UPDATE 時）",
+            "nullable": true,
+            "items": {
+              "type": "string"
+            }
+          },
+          "fieldLabels": {
+            "type": "object",
+            "description": "フィールド名→日本語ラベルの対応表",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "beforeRecord": {
+            "type": "object",
+            "description": "変更前のレコード（フィルタ済み）",
+            "nullable": true,
+            "additionalProperties": true
+          },
+          "afterRecord": {
+            "type": "object",
+            "description": "変更後のレコード（フィルタ済み）",
+            "nullable": true,
+            "additionalProperties": true
+          },
+          "changedBy": {
+            "type": "string",
+            "description": "変更者（スタッフ名 or legacy-tancd-N）",
+            "nullable": true
+          },
+          "changeReason": {
+            "type": "string",
+            "description": "変更理由",
+            "nullable": true
+          },
+          "ipAddress": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },

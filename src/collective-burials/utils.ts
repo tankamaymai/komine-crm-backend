@@ -2,13 +2,14 @@ import { PrismaClient, Prisma, CollectiveBurial } from '@prisma/client';
 import { todayJstAsUtcDate, addYearsUtc } from '../utils/dateUtils';
 
 /**
- * 請求予定日を計算
+ * 起点日 + 有効期間で請求予定日を計算する（起点日の決定は {@link resolveCountdownBaseDate}）。
  *
- * 起点は契約日（#164、業務確認 2026-06-07: 合祀は契約から一定年数後・年数はお墓のタイプで決まる。
- * 旧設計の「埋葬上限到達日」起点は廃止 — 埋葬者数に依存すると上限未到達の区画で
- * 請求予定日が永久に null になり請求が発火しない）。
+ * 「埋葬上限到達日」を起点にする旧設計は廃止済み（#164、業務確認 2026-06-07）。
+ * 埋葬者数に依存すると上限未到達の区画で請求予定日が永久に null になり請求が発火しないため。
+ * 議事録 2026-07-21 §1 で最終納骨日起点が要望されたが、これは上限人数ではなく
+ * 運用側が明示する is_final_burial で判定するので同じ問題は起きない。
  *
- * @param baseDate 起点日（契約日。UTC 00:00 正規化済みの Date を渡すこと #214）
+ * @param baseDate 起点日（最終納骨日 or 契約日。UTC 00:00 正規化済みの Date を渡すこと #214）
  * @param validityPeriodYears 有効期間（年単位）
  * @returns 請求予定日（UTC 00:00 を維持）
  */
@@ -22,17 +23,65 @@ export const calculateBillingScheduledDate = (
 };
 
 /**
- * 契約日と有効期間から請求予定日を導出する（#164: 契約日起点）
+ * 合祀カウントダウンの起点日を解決する（議事録 2026-07-21 §1）。
  *
- * @param contractDate 契約日（未設定なら null → 請求予定日も null。
+ * 最終納骨者（BuriedPerson.is_final_burial）の埋葬日があればそれを起点にする。
+ * 最終納骨者が未確定、または埋葬日が未入力なら契約日起点（#164 の従来動作）へ
+ * フォールバックする。フォールバックを残すのは、最終納骨者が確定しない区画で
+ * 請求予定日が永久に null になり請求が発火しなくなるのを避けるため。
+ *
+ * @param contractDate 契約日（UTC 00:00 正規化済み）
+ * @param finalBurialDate 最終納骨者の埋葬日（未確定なら null）
+ */
+export const resolveCountdownBaseDate = (
+  contractDate: Date | null,
+  finalBurialDate: Date | null
+): Date | null => finalBurialDate ?? contractDate;
+
+/**
+ * 起点日と有効期間から請求予定日を導出する。
+ *
+ * 起点は「最終納骨者の埋葬日、無ければ契約日」（{@link resolveCountdownBaseDate}）。
+ *
+ * @param contractDate 契約日（未設定なら null → 起点が無ければ請求予定日も null。
  *   契約日が後から設定された時点で再計算する運用）
  * @param validityPeriodYears 有効期間（年単位）
+ * @param finalBurialDate 最終納骨者の埋葬日。既定 null（＝契約日起点）で、
+ *   最終納骨者を扱わない既存呼び出しの挙動を変えない
  */
 export const resolveBillingScheduledDate = (
   contractDate: Date | null,
-  validityPeriodYears: number
-): Date | null =>
-  contractDate ? calculateBillingScheduledDate(contractDate, validityPeriodYears) : null;
+  validityPeriodYears: number,
+  finalBurialDate: Date | null = null
+): Date | null => {
+  const baseDate = resolveCountdownBaseDate(contractDate, finalBurialDate);
+  return baseDate ? calculateBillingScheduledDate(baseDate, validityPeriodYears) : null;
+};
+
+/**
+ * 最終納骨者の埋葬日を取得する。
+ *
+ * 最終納骨者は1契約区画につき1人までに制限しているが、レガシー投入等で複数存在した場合は
+ * 最も遅い埋葬日を採る（合祀は最後の納骨から数えるため、早い方を採ると前倒しになる）。
+ *
+ * @returns 最終納骨者が未確定、または埋葬日が未入力なら null
+ */
+export const findFinalBurialDate = async (
+  prisma: PrismaClient | Prisma.TransactionClient,
+  contractPlotId: string
+): Promise<Date | null> => {
+  const finalBurial = await prisma.buriedPerson.findFirst({
+    where: {
+      contract_plot_id: contractPlotId,
+      is_final_burial: true,
+      deleted_at: null,
+      burial_date: { not: null },
+    },
+    select: { burial_date: true },
+    orderBy: { burial_date: 'desc' },
+  });
+  return finalBurial?.burial_date ?? null;
+};
 
 /**
  * 合祀情報の埋葬人数と関連日付を自動更新
@@ -62,8 +111,9 @@ export const updateCollectiveBurialCount = async (
   });
 
   // 3. 上限到達判定と日付記録
-  // 請求予定日は契約日起点（#164）のため埋葬数では変更しない。
-  // capacity_reached_date は埋葬状況の記録としてのみ管理する。
+  // capacity_reached_date は埋葬状況の記録としてのみ管理し、請求予定日には使わない（#164）。
+  // 議事録 2026-07-21 §1 のとおり「4人契約だが3人で終了」があるため、上限到達では
+  // 最終納骨を判定できない。カウントダウンの起点は is_final_burial で確定させる。
   const capacityReached = currentCount >= collectiveBurial.burial_capacity;
   const wasCapacityReached = collectiveBurial.capacity_reached_date !== null;
 
@@ -78,6 +128,28 @@ export const updateCollectiveBurialCount = async (
   } else if (!capacityReached && wasCapacityReached) {
     // 上限を下回った: 到達日をリセット
     updateData.capacity_reached_date = null;
+  }
+
+  // 3.5. 請求予定日を「最終納骨者の埋葬日、無ければ契約日」起点で再計算する
+  //      （議事録 2026-07-21 §1）。埋葬者の追加・削除・最終納骨者フラグの変更に追随させる。
+  //
+  //      再計算しない条件:
+  //        - billing_scheduled_date_manual: 業務が予定日を手動指定した（例外運用 Q17）
+  //        - billing_status !== pending: 既に請求済/支払済。発行済み請求の根拠日を
+  //          後から動かすと突き合わせができなくなる
+  if (
+    !collectiveBurial.billing_scheduled_date_manual &&
+    collectiveBurial.billing_status === 'pending'
+  ) {
+    const contractPlot = await prisma.contractPlot.findUnique({
+      where: { id: plotId },
+      select: { contract_date: true },
+    });
+    updateData.billing_scheduled_date = resolveBillingScheduledDate(
+      contractPlot?.contract_date ?? null,
+      collectiveBurial.validity_period_years,
+      await findFinalBurialDate(prisma, plotId)
+    );
   }
 
   // 4. 合祀情報を更新

@@ -95,6 +95,30 @@ const physicalPlotUpdateSchema = sharedPhysicalPlotSchema
   .partial();
 
 /**
+ * 空き区画（物理区画のみ）先行登録のバリデーションスキーマ
+ * POST /plots/physical（システム確認 項目⑦）
+ * 契約者・契約情報なしで区画だけを登録する。区画番号・区画名は必須。
+ */
+export const createPhysicalPlotSchema = z.object({
+  plotNumber: z
+    .string()
+    .min(1, '区画番号は必須です')
+    .max(50, '区画番号は50文字以内で入力してください'),
+  displayNumber: z.string().max(50).optional().nullable().or(z.literal('')),
+  areaName: z
+    .string()
+    .min(1, '区画名（エリア）は必須です')
+    .max(100, '区画名は100文字以内で入力してください'),
+  areaSqm: z.coerce
+    .number()
+    .positive('面積は0より大きい値を入力してください')
+    .lt(1000, '面積は1000㎡未満で入力してください')
+    .optional(),
+  mapId: z.coerce.number().int().optional().nullable(),
+  notes: z.string().max(2000).optional().nullable().or(z.literal('')),
+});
+
+/**
  * 家族連絡先のバリデーションスキーマ
  * 共有スキーマをベースに、バックエンド固有フィールド（_delete, customerId, useWorkContact 等）を追加。
  * バルク登録でのスキップ判定（controller 側が必須フィールド欠落行をスキップ）と整合させるため、
@@ -157,6 +181,21 @@ export const buriedPersonSchema = sharedBuriedPersonSchema.extend({
   graveNumber: z.string().max(50).optional().or(z.literal('')),
   name: z.string().max(100).optional().or(z.literal('')),
 });
+
+/**
+ * 埋葬者の配列。最終納骨者（isFinalBurial）は1契約区画につき1人までに制限する。
+ * 複数指定されると合祀カウントダウンの起点日が一意に決まらない（議事録 2026-07-21 §1）。
+ *
+ * 共有側の buriedPersonsSchema と同じ不変条件だが、backend は buriedPersonSchema を
+ * extend して独自に配列化しているため共有側の refine が効かない。ここで再度かける。
+ * createPlot / updatePlot の埋葬者はどちらも全置換（入力に無い既存行は soft-delete）
+ * なので、配列内の検査で DB 上の重複も防げる。
+ */
+export const buriedPersonsSchema = z
+  .array(buriedPersonSchema)
+  .refine((list) => list.filter((person) => person.isFinalBurial === true).length <= 1, {
+    message: '最終納骨者は1人までしか指定できません',
+  });
 
 /**
  * 墓石情報のバリデーションスキーマ
@@ -337,7 +376,7 @@ export const createPlotSchema = z.object({
   familyContacts: z.array(familyContactSchema).optional(),
   // 埋葬者（任意）。スキーマ欠落により validate() で剥がされ、createPlot の保存処理
   // （createPlot.ts:375-424, PR#335）に届かず HTTP 経路で破棄されていた（#384, #320 同型）
-  buriedPersons: z.array(buriedPersonSchema).optional(),
+  buriedPersons: buriedPersonsSchema.optional(),
 });
 
 /**
@@ -360,7 +399,7 @@ export const updatePlotSchema = z.object({
   // スキーマ欠落により validate() で剥がされていた（#320）
   gravestoneInfo: gravestoneInfoSchema.or(z.null()),
   familyContacts: z.array(familyContactSchema).optional(),
-  buriedPersons: z.array(buriedPersonSchema).optional(),
+  buriedPersons: buriedPersonsSchema.optional(),
   constructionInfos: z.array(constructionInfoUpdateSchema).optional(),
   collectiveBurial: collectiveBurialSchema,
   // 変更理由（#261）。本更新で記録される履歴（History.change_reason VarChar(200)）に反映する
@@ -440,3 +479,19 @@ export type ChangeContractorRequest = z.infer<typeof changeContractorSchema>;
 
 // dateSchema も従来通り再エクスポート（他モジュールからの参照互換性維持）
 export { dateSchema };
+
+/**
+ * 空き区画一覧のクエリバリデーション
+ * GET /plots/vacant（議事録 2026-07-21 §6: 区画指定を手入力不可の選択式にする）
+ *
+ * 空き区画は実データで約2,500件、単一区画名でも最大647件あるため、
+ * 画面側は区画名で絞ってから使う。limit 上限は選択肢として現実的な範囲に抑える。
+ */
+export const vacantPlotsQuerySchema = z.object({
+  areaName: z.string().max(100).optional(),
+  search: z.string().max(50).optional(),
+  page: z.coerce.number().int().min(1).optional().default(1),
+  limit: z.coerce.number().int().min(1).max(200).optional().default(50),
+});
+
+export type VacantPlotsQuery = z.infer<typeof vacantPlotsQuerySchema>;

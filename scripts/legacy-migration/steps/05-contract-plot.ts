@@ -4,7 +4,7 @@ import type { RowDataPacket } from 'mysql2/promise';
 import { legacyQuery } from '../legacyDb';
 import { rebuildIdMap } from '../lib/id-map-loader';
 import { assertIdMapsReady } from '../lib/invariants';
-import { cleanStr, parseLegacyDate } from '../transforms';
+import { cleanStr, mergeNoteParts, parseLegacyArea, parseLegacyDate } from '../transforms';
 import type { MigrationStep } from '../types';
 
 // 旧 sykbnn 区分コード → 新マスタ code（seedMasters.ts と一致させること）
@@ -79,6 +79,8 @@ interface BochiContractRow extends RowDataPacket {
   houi_id: number | null;
   ichi_id: number | null;
   note: string | null;
+  /** 旧UI「碑文／碑文名」。契約備考(notes)へ統合する */
+  grave_mei: string | null;
   // t_danka からの JOIN 結果（承諾番号・承諾日）
   // m_bochi.danka_cd → t_danka.danka_cd で 1:1（同一 danka_cd が複数 m_bochi に紐づく場合も値は同一）
   auth_no: number | null;
@@ -121,7 +123,7 @@ export const stepContractPlot: MigrationStep = {
               b.kanriryou, b.kanriryou_menseki, b.kanriryou_tanka, b.kanriryou_keisan, b.kanriryou_zei,
               b.kanriryou_shiharai, b.kanriryou_seikyu, b.kanriryou_seikyunen, b.kanriryou_seikyutsuki,
               b.kanriryou_last_sei_date,
-              b.bosekiryou, b.boshi, b.houi_id, b.ichi_id, b.note,
+              b.bosekiryou, b.boshi, b.houi_id, b.ichi_id, b.note, b.grave_mei,
               d.auth_no, d.auth_date
          FROM m_bochi b
          LEFT JOIN t_danka d ON d.danka_cd = b.danka_cd AND (d.del_flg = 0 OR d.del_flg IS NULL)
@@ -182,9 +184,14 @@ export const stepContractPlot: MigrationStep = {
       // GravestoneInfo へ別途格納済み #326）。新規入力分はスタッフが必要に応じ調整する。
       const contractDate = parseLegacyDate(row.contract_start);
 
+      // 契約面積はレガシーの使用料面積（無ければ管理料面積）から取得。
+      // どちらも数値化できない行のみ従来デフォルト 3.6（システム確認 項目⑤）。
+      const contractAreaSqm =
+        parseLegacyArea(row.shiyouryou_menseki) ?? parseLegacyArea(row.kanriryou_menseki) ?? 3.6;
+
       const data: Prisma.ContractPlotCreateInput = {
         physicalPlot: { connect: { id: physicalPlotId } },
-        contract_area_sqm: 3.6,
+        contract_area_sqm: contractAreaSqm,
         contract_status: contractStatus,
         payment_status: 'unpaid', // Step 10 (Billing) 後に再計算する余地あり
         grave_kind: row.grave_kind,
@@ -200,7 +207,8 @@ export const stepContractPlot: MigrationStep = {
         // 許可日/開始日＝契約日（上記コメント参照、komine-docs#10 Q4/Q5）
         permit_date: contractDate,
         start_date: contractDate,
-        notes: cleanStr(row.note),
+        // 旧 note（備考）+ grave_mei（碑文／碑文名）を契約備考へ統合。墓誌(boshi)は別途 GravestoneInfo。
+        notes: mergeNoteParts(row.note, row.grave_mei),
       };
 
       const contractPlot = await prisma.contractPlot.create({ data });
