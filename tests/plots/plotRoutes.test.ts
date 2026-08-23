@@ -69,6 +69,16 @@ jest.mock('../../src/plots/controllers', () => ({
   getVacantPlots: jest.fn((req, res) =>
     res.status(200).json({ success: true, data: { items: [], pagination: {} } })
   ),
+  // 空き区画（物理区画のみ）先行登録（システム確認 項目⑦）。
+  // 一括登録が単発側へ吸われていないことを検証するために必要
+  createPhysicalPlot: jest.fn((req, res) => res.status(201).json({ success: true, data: {} })),
+  // 空き区画の範囲一括登録（議事録 2026-07-21 §6）
+  createPhysicalPlotsBulk: jest.fn((req, res) =>
+    res.status(201).json({
+      success: true,
+      data: { created: [], createdCount: 0, skipped: [], skippedCount: 0 },
+    })
+  ),
   // 履歴API
   getPlotHistory: jest.fn((req, res) =>
     res.status(200).json({ success: true, data: { items: [], total: 0 } })
@@ -86,6 +96,8 @@ import {
   createPlotContract,
   getPlotInventory,
   getVacantPlots,
+  createPhysicalPlot,
+  createPhysicalPlotsBulk,
 } from '../../src/plots/controllers';
 
 describe('Plot Routes', () => {
@@ -137,6 +149,27 @@ describe('Plot Routes', () => {
       await request(app).get('/api/v1/plots/vacant');
 
       expect(getPlotById).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('POST /api/v1/plots/physical/bulk', () => {
+    it('should call createPhysicalPlotsBulk controller', async () => {
+      const response = await request(app)
+        .post('/api/v1/plots/physical/bulk')
+        .send({ areaName: 'C', startNumber: 1, endNumber: 3 });
+
+      expect(response.status).toBe(201);
+      expect(createPhysicalPlotsBulk).toHaveBeenCalled();
+      expect(response.body.success).toBe(true);
+    });
+
+    // '/physical' と '/physical/bulk' は別パス。単発側に吸われないことを固定する
+    it('should not fall through to createPhysicalPlot', async () => {
+      await request(app)
+        .post('/api/v1/plots/physical/bulk')
+        .send({ areaName: 'C', startNumber: 1, endNumber: 3 });
+
+      expect(createPhysicalPlot).not.toHaveBeenCalled();
     });
   });
 

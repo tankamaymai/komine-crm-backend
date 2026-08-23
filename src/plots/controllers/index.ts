@@ -8,6 +8,7 @@ export { getGraveClassifications } from './getGraveClassifications';
 export { getPlotById } from './getPlotById';
 export { createPlot } from './createPlot';
 export { createPhysicalPlot } from './createPhysicalPlot';
+export { createPhysicalPlotsBulk } from './createPhysicalPlotsBulk';
 export { updatePlot } from './updatePlot';
 export { deletePlot } from './deletePlot';
 export { restoreContract } from './restoreContract';

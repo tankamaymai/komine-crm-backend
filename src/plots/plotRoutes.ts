@@ -5,6 +5,7 @@ import {
   getPlotById,
   createPlot,
   createPhysicalPlot,
+  createPhysicalPlotsBulk,
   updatePlot,
   deletePlot,
   restoreContract,
@@ -29,6 +30,7 @@ import {
   plotIdParamsSchema,
   createPlotSchema,
   createPhysicalPlotSchema,
+  createPhysicalPlotsBulkSchema,
   updatePlotSchema,
   createPlotContractSchema,
   restoreContractSchema,
@@ -142,6 +144,16 @@ router.post(
   requirePermission(['operator', 'manager', 'admin']),
   validate({ body: createPhysicalPlotSchema }),
   withLogging('Plots', 'createPhysicalPlot', createPhysicalPlot)
+);
+
+// 空き区画の範囲一括登録（議事録 2026-07-21 §6）
+// 「何番から何番まで」で空き区画をまとめて作る。既存番号はスキップして残りを登録する
+router.post(
+  '/physical/bulk',
+  authenticate,
+  requirePermission(['operator', 'manager', 'admin']),
+  validate({ body: createPhysicalPlotsBulkSchema }),
+  withLogging('Plots', 'createPhysicalPlotsBulk', createPhysicalPlotsBulk)
 );
 
 // 区画情報更新
