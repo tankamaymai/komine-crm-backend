@@ -25,6 +25,7 @@ export { getInventorySections } from './getInventorySections';
 export { getInventoryAreas } from './getInventoryAreas';
 export { getVacantPlots } from './getVacantPlots';
 export { getPlotMap } from './getPlotMap';
+export { getInventoryMonthlyReport } from './getInventoryMonthlyReport';
 
 // 履歴管理API
 export { getPlotHistory } from './getPlotHistory';
