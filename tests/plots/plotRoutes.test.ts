@@ -69,6 +69,9 @@ jest.mock('../../src/plots/controllers', () => ({
   getVacantPlots: jest.fn((req, res) =>
     res.status(200).json({ success: true, data: { items: [], pagination: {} } })
   ),
+  getPlotMap: jest.fn((req, res) =>
+    res.status(200).json({ success: true, data: { mapId: '2-1', plots: [] } })
+  ),
   // 履歴API
   getPlotHistory: jest.fn((req, res) =>
     res.status(200).json({ success: true, data: { items: [], total: 0 } })
@@ -86,6 +89,7 @@ import {
   createPlotContract,
   getPlotInventory,
   getVacantPlots,
+  getPlotMap,
 } from '../../src/plots/controllers';
 
 describe('Plot Routes', () => {
@@ -119,6 +123,22 @@ describe('Plot Routes', () => {
       expect(getGraveClassifications).toHaveBeenCalled();
       expect(response.body.success).toBe(true);
       expect(response.body.data).toEqual({ graveKinds: [], graveKubuns: [], graveTypes: [] });
+    });
+  });
+
+  describe('GET /api/v1/plots/inventory/map', () => {
+    it('should call getPlotMap controller', async () => {
+      const response = await request(app).get('/api/v1/plots/inventory/map?mapId=2-1');
+
+      expect(response.status).toBe(200);
+      expect(getPlotMap).toHaveBeenCalled();
+      expect(response.body.success).toBe(true);
+    });
+
+    it('should not fall through to getPlotById', async () => {
+      await request(app).get('/api/v1/plots/inventory/map?mapId=2-1');
+
+      expect(getPlotById).not.toHaveBeenCalled();
     });
   });
 
