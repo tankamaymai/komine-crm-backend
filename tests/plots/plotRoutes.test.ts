@@ -69,6 +69,9 @@ jest.mock('../../src/plots/controllers', () => ({
   getVacantPlots: jest.fn((req, res) =>
     res.status(200).json({ success: true, data: { items: [], pagination: {} } })
   ),
+  getPlotMap: jest.fn((req, res) =>
+    res.status(200).json({ success: true, data: { mapId: '2-1', plots: [] } })
+  ),
   // 空き区画（物理区画のみ）先行登録（システム確認 項目⑦）。
   // 一括登録が単発側へ吸われていないことを検証するために必要
   createPhysicalPlot: jest.fn((req, res) => res.status(201).json({ success: true, data: {} })),
@@ -96,6 +99,7 @@ import {
   createPlotContract,
   getPlotInventory,
   getVacantPlots,
+  getPlotMap,
   createPhysicalPlot,
   createPhysicalPlotsBulk,
 } from '../../src/plots/controllers';
@@ -131,6 +135,22 @@ describe('Plot Routes', () => {
       expect(getGraveClassifications).toHaveBeenCalled();
       expect(response.body.success).toBe(true);
       expect(response.body.data).toEqual({ graveKinds: [], graveKubuns: [], graveTypes: [] });
+    });
+  });
+
+  describe('GET /api/v1/plots/inventory/map', () => {
+    it('should call getPlotMap controller', async () => {
+      const response = await request(app).get('/api/v1/plots/inventory/map?mapId=2-1');
+
+      expect(response.status).toBe(200);
+      expect(getPlotMap).toHaveBeenCalled();
+      expect(response.body.success).toBe(true);
+    });
+
+    it('should not fall through to getPlotById', async () => {
+      await request(app).get('/api/v1/plots/inventory/map?mapId=2-1');
+
+      expect(getPlotById).not.toHaveBeenCalled();
     });
   });
 

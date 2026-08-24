@@ -19,6 +19,7 @@ import {
   getInventorySections,
   getInventoryAreas,
   getVacantPlots,
+  getPlotMap,
   getPlotHistory,
 } from './controllers';
 import { authenticate } from '../middleware/auth';
@@ -44,6 +45,7 @@ import {
   inventorySectionsQuerySchema,
   inventoryAreasQuerySchema,
 } from '../validations/inventoryValidation';
+import { plotMapQuerySchema } from '../validations/plotMapValidation';
 
 const router = Router();
 
@@ -102,6 +104,15 @@ router.get(
   requirePermission(['viewer', 'operator', 'manager', 'admin']),
   validate({ query: inventoryAreasQuerySchema }),
   withLogging('Plots', 'getInventoryAreas', getInventoryAreas)
+);
+
+// 区画図用オーバーレイ（区ごとの配置に契約・予約を重ねる）
+router.get(
+  '/inventory/map',
+  authenticate,
+  requirePermission(['viewer', 'operator', 'manager', 'admin']),
+  validate({ query: plotMapQuerySchema }),
+  withLogging('Plots', 'getPlotMap', getPlotMap)
 );
 
 // 空き区画一覧取得（議事録 2026-07-21 §6: 区画指定を手入力不可の選択式にする）
