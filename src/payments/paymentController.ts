@@ -20,6 +20,9 @@ type PaymentWithRelations = Prisma.PaymentGetPayload<{
         amount: true;
         billing_date: true;
         status: true;
+        use_start_year: true;
+        target_month: true;
+        customer: { select: { id: true; name: true; name_kana: true } };
       };
     };
     customer: { select: { id: true; name: true; name_kana: true } };
@@ -59,11 +62,24 @@ const formatPayment = (p: PaymentWithRelations) => ({
         amount: p.billing.amount,
         billingDate: p.billing.billing_date?.toISOString().split('T')[0] ?? null,
         status: p.billing.status,
+        // 請求の対象期間。"2026-03" 形式。どちらか欠けていれば null
+        billingYearMonth:
+          p.billing.use_start_year !== null && p.billing.target_month !== null
+            ? `${p.billing.use_start_year}-${String(p.billing.target_month).padStart(2, '0')}`
+            : null,
       }
     : null,
+  // 入金の顧客は直リンク（Payment.customer）優先、無ければ請求経由（Billing.customer）。
+  // 請求経由の入金でも名前が出るようにする（名前で探す運用のため）
   customer: p.customer
     ? { id: p.customer.id, name: p.customer.name, nameKana: p.customer.name_kana }
-    : null,
+    : p.billing?.customer
+      ? {
+          id: p.billing.customer.id,
+          name: p.billing.customer.name,
+          nameKana: p.billing.customer.name_kana,
+        }
+      : null,
   plotNumber: p.contractPlot?.physicalPlot.plot_number ?? null,
   displayNumber: p.contractPlot?.physicalPlot.display_number ?? null,
   areaName: p.contractPlot?.physicalPlot.area_name ?? null,
@@ -79,6 +95,12 @@ const includeRelations = {
       amount: true,
       billing_date: true,
       status: true,
+      // 請求の対象期間。「2026年3月分」の表示・絞り込みに使う
+      use_start_year: true,
+      target_month: true,
+      // 請求経由の入金は顧客が Billing 側にある（実データで入金12,505件のうち
+      // 12,372件が billing_id を持つ）。ここを返さないと名前で一覧を組めない
+      customer: { select: { id: true, name: true, name_kana: true } },
     },
   },
   customer: { select: { id: true, name: true, name_kana: true } },
@@ -118,6 +140,31 @@ export const getPayments = async (
       where.payment_date = {
         ...(q.paymentDateFrom && { gte: new Date(`${q.paymentDateFrom}T00:00:00Z`) }),
         ...(q.paymentDateTo && { lte: new Date(`${q.paymentDateTo}T23:59:59Z`) }),
+      };
+    }
+
+    // 顧客名で絞る（議事録 2026-07-21 §7）。
+    // 入金の顧客は Payment.customer（直リンク）と Billing.customer（請求経由）の
+    // 2経路がある。片方だけ見ると取りこぼすため OR で両方を対象にする。
+    // 漢字・カナの両方で引けるようにする（議事録 §3）
+    if (q.name) {
+      const nameMatch = {
+        OR: [
+          { name: { contains: q.name, mode: 'insensitive' as const } },
+          { name_kana: { contains: q.name, mode: 'insensitive' as const } },
+        ],
+      };
+      where.OR = [{ customer: nameMatch }, { billing: { customer: nameMatch } }];
+    }
+
+    // 請求年月で絞る（議事録 2026-07-21 §7）。
+    // 請求を出した日ではなく請求の対象期間（use_start_year + target_month）で絞る。
+    // 「2026年3月分の請求」を探す用途のため
+    if (q.billingYearMonth) {
+      const [year, month] = q.billingYearMonth.split('-');
+      where.billing = {
+        use_start_year: Number(year),
+        target_month: Number(month),
       };
     }
 
