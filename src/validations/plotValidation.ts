@@ -481,6 +481,39 @@ export type ChangeContractorRequest = z.infer<typeof changeContractorSchema>;
 export { dateSchema };
 
 /**
+ * 空き区画の範囲一括登録のバリデーション
+ * POST /plots/physical/bulk（議事録 2026-07-21 §6）
+ *
+ * 範囲の逆転と件数上限は bulkPhysicalPlotService 側で判定する（番号生成と同じ場所に
+ * 置いてロジックを一箇所にまとめるため）。ここは型と桁の検証に絞る。
+ */
+export const createPhysicalPlotsBulkSchema = z.object({
+  areaName: z
+    .string()
+    .min(1, '区画名（エリア）は必須です')
+    .max(100, '区画名は100文字以内で入力してください'),
+  // display_number は VarChar(100)。接頭辞＋番号で収まる範囲に抑える
+  prefix: z.string().max(50, '接頭辞は50文字以内で入力してください').optional(),
+  startNumber: z.coerce
+    .number()
+    .int('開始番号は整数で入力してください')
+    .nonnegative('開始番号は0以上で入力してください'),
+  endNumber: z.coerce
+    .number()
+    .int('終了番号は整数で入力してください')
+    .nonnegative('終了番号は0以上で入力してください'),
+  areaSqm: z.coerce
+    .number()
+    .positive('面積は0より大きい値を入力してください')
+    .lt(1000, '面積は1000㎡未満で入力してください')
+    .optional(),
+  mapId: z.coerce.number().int().optional().nullable(),
+  notes: z.string().max(2000).optional().nullable().or(z.literal('')),
+});
+
+export type CreatePhysicalPlotsBulkInput = z.infer<typeof createPhysicalPlotsBulkSchema>;
+
+/**
  * 空き区画一覧のクエリバリデーション
  * GET /plots/vacant（議事録 2026-07-21 §6: 区画指定を手入力不可の選択式にする）
  *

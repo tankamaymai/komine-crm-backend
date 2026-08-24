@@ -367,6 +367,108 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /api/v1/plots/physical/bulk:
+    post:
+      tags:
+        - Plots
+      summary: 空き区画の範囲一括登録
+      description: |
+        「何番から何番まで」で空き区画（物理区画のみ）をまとめて登録します
+        （議事録 2026-07-21 §6）。契約者・契約情報は持たず、在庫（区画残数管理）に
+        「空き」として現れます。
+
+        生成規則:
+          displayNumber = `{prefix}{n}`            例: "1"…"50" / "A-1"…"A-50"
+          plotNumber    = `{areaName}-{prefix}{n}` 例: "C-1"
+
+        plot_number はユニーク制約（移行キー兼用）のため区画名を前置し、別エリアの
+        同番号と衝突させません。
+
+        既に登録済みの番号はスキップして残りを登録し、スキップした番号を
+        レスポンスで返します（区画増設で一部だけ先に登録済みの運用に対応）。
+        重複判定は論理削除済みも含めます（plot_number は deleted_at を含まない
+        単独 unique のため）。
+
+        一度に登録できるのは500件までです（`1〜99999` のような誤入力で数万件が
+        入る事故を防ぐガード）。
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [areaName, startNumber, endNumber]
+              properties:
+                areaName:
+                  type: string
+                  maxLength: 100
+                  example: C
+                prefix:
+                  type: string
+                  maxLength: 50
+                  description: 番号の接頭辞（任意）
+                  example: "A-"
+                startNumber:
+                  type: integer
+                  minimum: 0
+                  example: 1
+                endNumber:
+                  type: integer
+                  minimum: 0
+                  example: 50
+                areaSqm:
+                  type: number
+                  description: ㎡。省略時は 3.6。区画名により実面積は大きく異なる（凛=0.013 / 納骨堂=0.09）
+                  example: 3.6
+                mapId:
+                  type: integer
+                  nullable: true
+                notes:
+                  type: string
+                  maxLength: 2000
+                  nullable: true
+      responses:
+        "201":
+          description: 登録成功（スキップを含む場合もある）
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      created:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/VacantPlotItem"
+                      createdCount:
+                        type: integer
+                      skipped:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            plotNumber:
+                              type: string
+                            displayNumber:
+                              type: string
+                            reason:
+                              type: string
+                      skippedCount:
+                        type: integer
+        "400":
+          description: 範囲の逆転、または上限件数超過
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /api/v1/plots/vacant:
     get:
       tags:
