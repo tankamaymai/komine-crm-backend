@@ -119,6 +119,8 @@ export const API_PERMISSIONS: Record<string, Role[]> = {
   'GET /documents/*': ['viewer', 'operator', 'manager', 'admin'],
   'POST /documents': ['operator', 'manager', 'admin'],
   'POST /documents/generate-pdf': ['operator', 'manager', 'admin'],
+  'GET /documents/bulk-invoice/targets': ['viewer', 'operator', 'manager', 'admin'],
+  'POST /documents/bulk-invoice/generate': ['operator', 'manager', 'admin'],
   'PUT /documents/*': ['operator', 'manager', 'admin'],
   'DELETE /documents/*': ['manager', 'admin'],
   'POST /documents/*/regenerate-pdf': ['operator', 'manager', 'admin'],
