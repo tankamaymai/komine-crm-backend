@@ -18,9 +18,25 @@ import {
   getDocumentDownloadUrl,
   getDocumentFile,
 } from './documentController';
+import { getBulkInvoiceTargets, generateBulkInvoice } from './bulkInvoiceController';
 import { documentFileUpload } from './uploadMiddleware';
 
 const router = Router();
+
+// 請求書の一括印刷（'/:id' より先に定義。後だと 'bulk-invoice' が :id にマッチする）
+router.get(
+  '/bulk-invoice/targets',
+  authenticate,
+  requirePermission(['viewer', 'operator', 'manager', 'admin']),
+  withLogging('Documents', 'getBulkInvoiceTargets', getBulkInvoiceTargets)
+);
+
+router.post(
+  '/bulk-invoice/generate',
+  authenticate,
+  requirePermission(['operator', 'manager', 'admin']),
+  withLogging('Documents', 'generateBulkInvoice', generateBulkInvoice)
+);
 
 // 書類一覧取得
 router.get(
