@@ -56,17 +56,23 @@ function normalizePdfTextStylePreset(raw: unknown): string {
 }
 
 /**
- * HTMLテンプレートを読み込み、データを埋め込む
+ * HTMLテンプレートファイルを読み込む
  */
-function loadAndRenderTemplate(templateType: TemplateType, data: Record<string, unknown>): string {
+function loadTemplateHtml(templateType: TemplateType): string {
   const templatePath = path.join(__dirname, 'templates', `${templateType}.html`);
 
   if (!fs.existsSync(templatePath)) {
     throw new Error(`テンプレートが見つかりません: ${templateType}`);
   }
 
-  const templateHtml = fs.readFileSync(templatePath, 'utf-8');
-  return renderTemplateHtml(templateHtml, templateType, data);
+  return fs.readFileSync(templatePath, 'utf-8');
+}
+
+/**
+ * HTMLテンプレートを読み込み、データを埋め込む
+ */
+function loadAndRenderTemplate(templateType: TemplateType, data: Record<string, unknown>): string {
+  return renderTemplateHtml(loadTemplateHtml(templateType), templateType, data);
 }
 
 /**
@@ -288,6 +294,87 @@ export async function generatePdfFromHtml(
     } finally {
       releaseChromiumSlot();
     }
+  }
+}
+
+/**
+ * 一括印刷の各請求書を 1 ページずつに分けるスタイル。
+ * テンプレート側の CSS は据え置き、ページ送りだけを足す。
+ */
+const BULK_PAGE_STYLE = `
+    .invoice-page {
+      page-break-after: always;
+      break-after: page;
+    }
+
+    .invoice-page:last-child {
+      page-break-after: auto;
+      break-after: auto;
+    }
+`;
+
+/**
+ * 複数件の請求書を 1 つの HTML に連結する（ファイルI/O を伴わない純粋関数）。
+ *
+ * 数百件を 1 件ずつ PDF 化すると Chromium の起動コスト（同時2プロセス制限あり）で
+ * 実用にならないため、全件を 1 ドキュメントに連結して Puppeteer を 1 回だけ動かす。
+ * 書体プリセットは一括ジョブ単位で共通のため body に 1 度だけ適用する。
+ */
+export function buildBulkInvoiceHtml(
+  templateHtml: string,
+  items: InvoiceTemplateData[],
+  textStylePreset: string = 'default'
+): string {
+  const head = templateHtml.match(/<head[^>]*>([\s\S]*?)<\/head>/i)?.[1] ?? '';
+
+  const sections = items.map((item) => {
+    const rendered = renderTemplateHtml(templateHtml, 'invoice', {
+      ...item,
+      // ページ単位ではなくドキュメント全体の body に付けるため、ここでは無効化する
+      textStylePreset: 'default',
+    });
+    const body = rendered.match(/<body[^>]*>([\s\S]*?)<\/body>/i)?.[1] ?? '';
+    return `<section class="invoice-page">${body}</section>`;
+  });
+
+  const preset = normalizePdfTextStylePreset(textStylePreset);
+  const bodyAttr = preset === 'default' ? '' : ` class="doc-preset-${preset}"`;
+
+  return [
+    '<!DOCTYPE html>',
+    '<html lang="ja">',
+    `<head>${head}<style>${BULK_PAGE_STYLE}</style></head>`,
+    `<body${bodyAttr}>`,
+    sections.join('\n'),
+    '</body>',
+    '</html>',
+  ].join('\n');
+}
+
+/**
+ * 複数件の請求書を 1 ファイルの PDF にまとめて生成する
+ */
+export async function generateBulkInvoicePdf(
+  items: InvoiceTemplateData[],
+  options?: { textStylePreset?: string }
+): Promise<{ success: boolean; buffer?: Buffer; error?: string }> {
+  if (items.length === 0) {
+    return { success: false, error: '印刷対象がありません' };
+  }
+
+  try {
+    const html = buildBulkInvoiceHtml(
+      loadTemplateHtml('invoice'),
+      items,
+      options?.textStylePreset ?? 'default'
+    );
+    return await generatePdfFromHtml(html, { format: 'A4' });
+  } catch (error) {
+    logger.error({ err: error }, 'Bulk invoice PDF generation error');
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : '請求書の一括生成に失敗しました',
+    };
   }
 }
 

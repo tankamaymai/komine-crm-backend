@@ -5,6 +5,7 @@ import {
   getPlotById,
   createPlot,
   createPhysicalPlot,
+  createPhysicalPlotsBulk,
   updatePlot,
   deletePlot,
   restoreContract,
@@ -18,6 +19,7 @@ import {
   getInventorySections,
   getInventoryAreas,
   getVacantPlots,
+  getPlotMap,
   getPlotHistory,
 } from './controllers';
 import { authenticate } from '../middleware/auth';
@@ -29,6 +31,7 @@ import {
   plotIdParamsSchema,
   createPlotSchema,
   createPhysicalPlotSchema,
+  createPhysicalPlotsBulkSchema,
   updatePlotSchema,
   createPlotContractSchema,
   restoreContractSchema,
@@ -42,6 +45,7 @@ import {
   inventorySectionsQuerySchema,
   inventoryAreasQuerySchema,
 } from '../validations/inventoryValidation';
+import { plotMapQuerySchema } from '../validations/plotMapValidation';
 
 const router = Router();
 
@@ -102,6 +106,15 @@ router.get(
   withLogging('Plots', 'getInventoryAreas', getInventoryAreas)
 );
 
+// 区画図用オーバーレイ（区ごとの配置に契約・予約を重ねる）
+router.get(
+  '/inventory/map',
+  authenticate,
+  requirePermission(['viewer', 'operator', 'manager', 'admin']),
+  validate({ query: plotMapQuerySchema }),
+  withLogging('Plots', 'getPlotMap', getPlotMap)
+);
+
 // 空き区画一覧取得（議事録 2026-07-21 §6: 区画指定を手入力不可の選択式にする）
 // 注意: '/:id' より前に定義すること。後だと id='vacant' として解釈される
 router.get(
@@ -142,6 +155,16 @@ router.post(
   requirePermission(['operator', 'manager', 'admin']),
   validate({ body: createPhysicalPlotSchema }),
   withLogging('Plots', 'createPhysicalPlot', createPhysicalPlot)
+);
+
+// 空き区画の範囲一括登録（議事録 2026-07-21 §6）
+// 「何番から何番まで」で空き区画をまとめて作る。既存番号はスキップして残りを登録する
+router.post(
+  '/physical/bulk',
+  authenticate,
+  requirePermission(['operator', 'manager', 'admin']),
+  validate({ body: createPhysicalPlotsBulkSchema }),
+  withLogging('Plots', 'createPhysicalPlotsBulk', createPhysicalPlotsBulk)
 );
 
 // 区画情報更新

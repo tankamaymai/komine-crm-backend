@@ -11,8 +11,12 @@ import {
   postcardTemplateDataSchema,
   permitTemplateDataSchema,
   paymentGuideTemplateDataSchema,
+  bulkInvoiceTargetsQuerySchema,
+  generateBulkInvoiceRequestSchema,
   type DocumentTemplateType,
   type GeneratePdfRequestInput,
+  type BulkInvoiceTargetsQueryInput,
+  type GenerateBulkInvoiceRequestInput,
   type PdfTemplateData,
 } from '@komine/types';
 
@@ -22,8 +26,14 @@ export {
   postcardTemplateDataSchema,
   permitTemplateDataSchema,
   paymentGuideTemplateDataSchema,
+  bulkInvoiceTargetsQuerySchema,
+  generateBulkInvoiceRequestSchema,
 };
-export type { GeneratePdfRequestInput };
+export type {
+  GeneratePdfRequestInput,
+  BulkInvoiceTargetsQueryInput,
+  GenerateBulkInvoiceRequestInput,
+};
 
 const TEMPLATE_DATA_SCHEMAS = {
   invoice: invoiceTemplateDataSchema,

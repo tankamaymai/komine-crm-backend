@@ -8,6 +8,7 @@ export { getGraveClassifications } from './getGraveClassifications';
 export { getPlotById } from './getPlotById';
 export { createPlot } from './createPlot';
 export { createPhysicalPlot } from './createPhysicalPlot';
+export { createPhysicalPlotsBulk } from './createPhysicalPlotsBulk';
 export { updatePlot } from './updatePlot';
 export { deletePlot } from './deletePlot';
 export { restoreContract } from './restoreContract';
@@ -23,6 +24,7 @@ export { getInventoryPeriods } from './getInventoryPeriods';
 export { getInventorySections } from './getInventorySections';
 export { getInventoryAreas } from './getInventoryAreas';
 export { getVacantPlots } from './getVacantPlots';
+export { getPlotMap } from './getPlotMap';
 
 // 履歴管理API
 export { getPlotHistory } from './getPlotHistory';
