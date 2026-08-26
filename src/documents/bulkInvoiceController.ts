@@ -30,10 +30,12 @@ import { generateBulkInvoicePdf } from './documentService';
 import {
   attachContractDetails,
   selectBillableFees,
+  excludePrepaidFees,
   type BulkInvoiceContractDetail,
   type BulkInvoiceFeeRow,
   type SelectBulkInvoiceTargetsOptions,
 } from './bulkInvoiceLogic';
+import { type ExistingMgmtBilling } from '../billings/managementFeeBillingService';
 
 /**
  * 1 回の印刷で扱う上限。3月の全対象でも 300 件弱のため、これを超える指定は
@@ -133,9 +135,43 @@ async function fetchContractDetails(
   });
 }
 
+/**
+ * 対象候補の区画について、既存の管理料請求（年の判定に必要な列だけ）を引く。
+ *
+ * 全契約分ではなく絞り込み後の百数十件だけを対象にするので、
+ * プレビューの応答時間への影響はほぼない。
+ */
+async function fetchExistingBillings(
+  contractPlotIds: string[]
+): Promise<Map<string, ExistingMgmtBilling[]>> {
+  if (contractPlotIds.length === 0) return new Map();
+
+  const billings = await prisma.billing.findMany({
+    where: {
+      contract_plot_id: { in: contractPlotIds },
+      deleted_at: null,
+      category: 'management_fee',
+    },
+    select: { contract_plot_id: true, use_start_year: true, use_end_year: true },
+  });
+
+  const map = new Map<string, ExistingMgmtBilling[]>();
+  for (const b of billings) {
+    const list = map.get(b.contract_plot_id) ?? [];
+    list.push({ use_start_year: b.use_start_year, use_end_year: b.use_end_year });
+    map.set(b.contract_plot_id, list);
+  }
+  return map;
+}
+
 /** 一括印刷の対象一覧を組み立てる */
 async function loadTargets(options: SelectBulkInvoiceTargetsOptions): Promise<BulkInvoiceTarget[]> {
-  const fees = selectBillableFees(await fetchFeeRows(), options);
+  const candidates = selectBillableFees(await fetchFeeRows(), options);
+  // 前受済みの年は請求書を送らない（#6）。最終請求月だけでは前受を判定できない
+  const fees = excludePrepaidFees(
+    candidates,
+    await fetchExistingBillings(candidates.map((f) => f.contractPlotId))
+  );
   const details = await fetchContractDetails(fees.map((f) => f.contractPlotId));
   return attachContractDetails(fees, details);
 }

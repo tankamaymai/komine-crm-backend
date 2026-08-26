@@ -12,8 +12,10 @@ import {
   selectBulkInvoiceTargets,
   selectBillableFees,
   attachContractDetails,
+  excludePrepaidFees,
   type BulkInvoiceContractDetail,
   type BulkInvoiceSourceRow,
+  type BulkInvoiceBillableFee,
 } from '../../src/documents/bulkInvoiceLogic';
 
 const row = (overrides: Partial<BulkInvoiceSourceRow> = {}): BulkInvoiceSourceRow => ({
@@ -275,5 +277,47 @@ describe('selectBillableFees / attachContractDetails', () => {
       ['a', '山田 太郎'],
       ['b', '佐藤 花子'],
     ]);
+  });
+});
+
+describe('excludePrepaidFees', () => {
+  const fee = (contractPlotId: string, targetYear: number): BulkInvoiceBillableFee => ({
+    contractPlotId,
+    billingYears: 10,
+    billingMonth: 3,
+    lastBillingMonth: '2016-03',
+    targetYear,
+    amount: 10000,
+    nextNoticeDate: `${targetYear}-03-01`,
+    overdue: false,
+  });
+
+  it('対象年が既存請求でカバーされている区画を落とす', () => {
+    const fees = [fee('plot-1', 2026), fee('plot-2', 2026)];
+    const billings = new Map([['plot-1', [{ use_start_year: 2026, use_end_year: 2026 }]]]);
+
+    const result = excludePrepaidFees(fees, billings);
+
+    expect(result.map((f) => f.contractPlotId)).toEqual(['plot-2']);
+  });
+
+  it('前納レンジに含まれる年も落とす', () => {
+    const fees = [fee('plot-1', 2030)];
+    const billings = new Map([['plot-1', [{ use_start_year: 2026, use_end_year: 2055 }]]]);
+
+    expect(excludePrepaidFees(fees, billings)).toEqual([]);
+  });
+
+  it('既存請求が無ければそのまま残す', () => {
+    const fees = [fee('plot-1', 2026)];
+
+    expect(excludePrepaidFees(fees, new Map())).toEqual(fees);
+  });
+
+  it('年が判定できない請求だけの区画は残す（誤って落とさない）', () => {
+    const fees = [fee('plot-1', 2026)];
+    const billings = new Map([['plot-1', [{ use_start_year: null, use_end_year: null }]]]);
+
+    expect(excludePrepaidFees(fees, billings)).toEqual(fees);
   });
 });
