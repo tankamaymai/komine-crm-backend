@@ -53,7 +53,14 @@ export function estimateStartYear(
   return { startYear: latest == null ? currentYear : latest + 1, estimated: true };
 }
 
-/** 開始年から年ごとの内訳を組み立て、既存請求がカバーする年に重複の印を付ける */
+/**
+ * 開始年から年ごとの内訳を組み立て、既存請求との重なりを印として付ける。
+ *
+ * 年が入っていない既存請求がある区画では、その年が請求済みかを機械判定できない
+ * （`existingBillingCoverage` の `needs_review`）。該当は 1,854 区画中 15 区画と
+ * 少なく、一律に登録を止めると窓口が詰まるため、重複とは分けて「要確認」として
+ * 返し、登録の可否は画面の警告を見た窓口の判断に委ねる。
+ */
 export function buildYearRows(
   startYear: number,
   amounts: number[],
@@ -61,10 +68,12 @@ export function buildYearRows(
 ): PrepaidBillingYearRow[] {
   return amounts.map((amount, i) => {
     const year = startYear + i;
+    const coverage = existingBillingCoverage(existing, year);
     return {
       year,
       amount,
-      duplicated: existingBillingCoverage(existing, year) === 'covered',
+      duplicated: coverage === 'covered',
+      needsReview: coverage === 'needs_review',
     };
   });
 }
@@ -72,4 +81,9 @@ export function buildYearRows(
 /** 重複している年だけを取り出す */
 export function findDuplicatedYears(rows: PrepaidBillingYearRow[]): number[] {
   return rows.filter((r) => r.duplicated).map((r) => r.year);
+}
+
+/** 請求済みか判定できない年だけを取り出す */
+export function findNeedsReviewYears(rows: PrepaidBillingYearRow[]): number[] {
+  return rows.filter((r) => r.needsReview).map((r) => r.year);
 }

@@ -3,6 +3,7 @@ import {
   buildYearRows,
   estimateStartYear,
   findDuplicatedYears,
+  findNeedsReviewYears,
 } from '../../src/billings/prepaidBillingLogic';
 
 describe('allocateAmounts', () => {
@@ -54,9 +55,9 @@ describe('buildYearRows', () => {
   it('開始年から昇順に年と金額を並べる', () => {
     const rows = buildYearRows(2026, [10000, 10000, 10000], []);
     expect(rows).toEqual([
-      { year: 2026, amount: 10000, duplicated: false },
-      { year: 2027, amount: 10000, duplicated: false },
-      { year: 2028, amount: 10000, duplicated: false },
+      { year: 2026, amount: 10000, duplicated: false, needsReview: false },
+      { year: 2027, amount: 10000, duplicated: false, needsReview: false },
+      { year: 2028, amount: 10000, duplicated: false, needsReview: false },
     ]);
   });
 
@@ -65,18 +66,47 @@ describe('buildYearRows', () => {
     const rows = buildYearRows(2026, [10000, 10000], existing);
     expect(rows.map((r) => r.duplicated)).toEqual([false, true]);
   });
+
+  it('年が入っていない請求があるとカバー外の年に要確認の印を付ける', () => {
+    const existing = [
+      { use_start_year: null, use_end_year: null },
+      { use_start_year: 2026, use_end_year: 2026 },
+    ];
+    const rows = buildYearRows(2026, [10000, 10000], existing);
+    // 2026 は確実にカバー済み、2027 は判定できない
+    expect(rows.map((r) => r.duplicated)).toEqual([true, false]);
+    expect(rows.map((r) => r.needsReview)).toEqual([false, true]);
+  });
 });
 
 describe('findDuplicatedYears', () => {
   it('重複した年だけを返す', () => {
     const rows = [
-      { year: 2026, amount: 10000, duplicated: false },
-      { year: 2027, amount: 10000, duplicated: true },
+      { year: 2026, amount: 10000, duplicated: false, needsReview: false },
+      { year: 2027, amount: 10000, duplicated: true, needsReview: false },
     ];
     expect(findDuplicatedYears(rows)).toEqual([2027]);
   });
 
   it('重複が無ければ空配列', () => {
-    expect(findDuplicatedYears([{ year: 2026, amount: 10000, duplicated: false }])).toEqual([]);
+    expect(
+      findDuplicatedYears([{ year: 2026, amount: 10000, duplicated: false, needsReview: false }])
+    ).toEqual([]);
+  });
+});
+
+describe('findNeedsReviewYears', () => {
+  it('要確認の年だけを返す', () => {
+    const rows = [
+      { year: 2026, amount: 10000, duplicated: false, needsReview: false },
+      { year: 2027, amount: 10000, duplicated: false, needsReview: true },
+    ];
+    expect(findNeedsReviewYears(rows)).toEqual([2027]);
+  });
+
+  it('要確認が無ければ空配列', () => {
+    expect(
+      findNeedsReviewYears([{ year: 2026, amount: 10000, duplicated: false, needsReview: false }])
+    ).toEqual([]);
   });
 });
