@@ -281,6 +281,7 @@ describe('selectBillableFees / attachContractDetails', () => {
 });
 
 describe('excludePrepaidFees', () => {
+  // コントローラ側で入金済みの管理料請求のみに絞り込んだ Map を渡す前提
   const fee = (contractPlotId: string, targetYear: number): BulkInvoiceBillableFee => ({
     contractPlotId,
     billingYears: 10,
@@ -319,5 +320,22 @@ describe('excludePrepaidFees', () => {
     const billings = new Map([['plot-1', [{ use_start_year: null, use_end_year: null }]]]);
 
     expect(excludePrepaidFees(fees, billings)).toEqual(fees);
+  });
+
+  it('年なし請求と対象年をカバーする請求が混在する場合、カバー判定を優先して除外する', () => {
+    const fees = [fee('plot-1', 2026)];
+    // 年なしの請求と 2026 年をカバーする請求が混在
+    // existingBillingCoverage は 'covered' を返すため、この区画は除外される（= 請求書を送らない）
+    const billings = new Map([
+      [
+        'plot-1',
+        [
+          { use_start_year: null, use_end_year: null }, // 年なし
+          { use_start_year: 2026, use_end_year: 2026 }, // 2026 をカバー
+        ],
+      ],
+    ]);
+
+    expect(excludePrepaidFees(fees, billings)).toEqual([]);
   });
 });
