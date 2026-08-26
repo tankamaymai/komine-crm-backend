@@ -165,48 +165,63 @@ export const createPrepaidBilling = async (
 
     const prepaidBatchId = randomUUID();
     const paymentDate = new Date(`${input.paymentDate}T00:00:00Z`);
+    // Zod で /^\d{4}-\d{2}-\d{2}$/ を通るだけなので '2026-02-30' のような
+    // 不正な日付が通過する。JavaScript の Date は不正な日付を自動修正するため
+    // （2月30日 → 3月2日）、ISO 文字列に戻して元の入力と一致するか確認する。
+    if (
+      Number.isNaN(paymentDate.getTime()) ||
+      paymentDate.toISOString().slice(0, 10) !== input.paymentDate
+    ) {
+      throw new ValidationError('paymentDate が不正な日付です');
+    }
     const endYear = input.startYear + input.years - 1;
     const notes =
       input.notes ??
       `前受金一括登録（${input.startYear}年〜${endYear}年 / ${input.receivedAmount.toLocaleString('ja-JP')}円）`;
 
-    await prisma.$transaction(async (tx) => {
-      for (const row of rows) {
-        const billing = await tx.billing.create({
-          data: {
-            contract_plot_id: input.contractPlotId,
-            customer_id: ctx.customerId as string,
-            category: 'management_fee',
-            amount: row.amount,
-            use_start_year: row.year,
-            use_end_year: row.year,
-            billing_years: 1,
-            target_month: ctx.billingMonth,
-            billing_date: new Date(Date.UTC(row.year, ctx.billingMonth - 1, 1)),
-            status: 'paid',
-            paid_amount: row.amount,
-            last_payment_date: paymentDate,
-            prepaid_batch_id: prepaidBatchId,
-            notes,
-          },
-        });
+    // years は最大 100 まで許容され、ループは1年あたり Billing + Payment の2往復＝
+    // 最大 200 往復になる。Prisma 既定の 5 秒では境界値で P2028 タイムアウトになるため
+    // 30 秒に延長する。
+    await prisma.$transaction(
+      async (tx) => {
+        for (const row of rows) {
+          const billing = await tx.billing.create({
+            data: {
+              contract_plot_id: input.contractPlotId,
+              customer_id: ctx.customerId as string,
+              category: 'management_fee',
+              amount: row.amount,
+              use_start_year: row.year,
+              use_end_year: row.year,
+              billing_years: 1,
+              target_month: ctx.billingMonth,
+              billing_date: new Date(Date.UTC(row.year, ctx.billingMonth - 1, 1)),
+              status: 'paid',
+              paid_amount: row.amount,
+              last_payment_date: paymentDate,
+              prepaid_batch_id: prepaidBatchId,
+              notes,
+            },
+          });
 
-        await tx.payment.create({
-          data: {
-            billing_id: billing.id,
-            contract_plot_id: input.contractPlotId,
-            customer_id: ctx.customerId as string,
-            payment_date: paymentDate,
-            payment_amount: row.amount,
-            fee_type: '管理料',
-            prepaid_batch_id: prepaidBatchId,
-            notes,
-          },
-        });
-      }
+          await tx.payment.create({
+            data: {
+              billing_id: billing.id,
+              contract_plot_id: input.contractPlotId,
+              customer_id: ctx.customerId as string,
+              payment_date: paymentDate,
+              payment_amount: row.amount,
+              fee_type: '管理料',
+              prepaid_batch_id: prepaidBatchId,
+              notes,
+            },
+          });
+        }
 
-      await recalculateContractPlotPaymentStatus(tx, input.contractPlotId);
-    });
+        await recalculateContractPlotPaymentStatus(tx, input.contractPlotId);
+      },
+      { timeout: 30_000 }
+    );
 
     const data: CreatePrepaidBillingResponse = {
       prepaidBatchId,
@@ -233,6 +248,13 @@ export const deletePrepaidBilling = async (
 ): Promise<void> => {
   try {
     const { batchId } = req.params as Record<string, string>;
+
+    // batchId が空の場合、Prisma は where: { prepaid_batch_id: undefined } を
+    // 「絞り込みなし」として扱い、非削除の全 Billing・全 Payment を論理削除する。
+    // findMany が 0 件にならないので 404 にも落ちず、全件削除が成立してしまう。
+    if (!batchId || batchId.trim() === '') {
+      throw new ValidationError('batchId は必須です');
+    }
 
     const billings = await prisma.billing.findMany({
       where: { prepaid_batch_id: batchId, deleted_at: null },

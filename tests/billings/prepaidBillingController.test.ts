@@ -23,6 +23,7 @@ import {
   createPrepaidBilling,
   deletePrepaidBilling,
 } from '../../src/billings/prepaidBillingController';
+import { ValidationError, NotFoundError } from '../../src/middleware/errorHandler';
 
 const PLOT_UUID = '22222222-2222-4222-8222-222222222222';
 const CUSTOMER_UUID = '33333333-3333-4333-8333-333333333333';
@@ -169,6 +170,22 @@ describe('createPrepaidBilling', () => {
       paid_amount: 10000,
     });
     expect(firstBilling.prepaid_batch_id).toEqual(expect.any(String));
+    // billing_date は3月請求のため Date.UTC(2026, 2, 1)、last_payment_date は入金日
+    expect(firstBilling.billing_date).toEqual(new Date(Date.UTC(2026, 2, 1)));
+    expect(firstBilling.last_payment_date).toEqual(new Date('2026-03-15T00:00:00Z'));
+
+    // Payment の中身を検証
+    const firstPayment = mockPrisma.payment.create.mock.calls[0][0].data;
+    expect(firstPayment).toMatchObject({
+      billing_id: 'billing-10000',
+      contract_plot_id: PLOT_UUID,
+      customer_id: CUSTOMER_UUID,
+      payment_amount: 10000,
+      fee_type: '管理料',
+      payment_date: new Date('2026-03-15T00:00:00Z'),
+    });
+    // prepaid_batch_id が Billing と Payment で同じ値であること
+    expect(firstPayment.prepaid_batch_id).toBe(firstBilling.prepaid_batch_id);
 
     expect(res.status).toHaveBeenCalledWith(201);
     const payload = (res.json as jest.Mock).mock.calls[0][0];
@@ -224,7 +241,27 @@ describe('createPrepaidBilling', () => {
     await createPrepaidBilling(req as Request, res as Response, next);
 
     expect(mockPrisma.billing.create).not.toHaveBeenCalled();
-    expect(next).toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.any(ValidationError));
+  });
+
+  it('不正な日付を弾く', async () => {
+    mockPrisma.contractPlot.findFirst.mockResolvedValue(plotWithFee([]));
+    const req = buildRequest({
+      body: {
+        contractPlotId: PLOT_UUID,
+        receivedAmount: 10000,
+        years: 1,
+        startYear: 2026,
+        paymentDate: '2026-02-30', // 不正な日付
+      },
+    });
+    const res = buildResponse();
+    const next = jest.fn() as NextFunction;
+
+    await createPrepaidBilling(req as Request, res as Response, next);
+
+    expect(mockPrisma.billing.create).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.any(ValidationError));
   });
 });
 
@@ -262,6 +299,18 @@ describe('deletePrepaidBilling', () => {
     await deletePrepaidBilling(req as Request, res as Response, next);
 
     expect(mockPrisma.billing.updateMany).not.toHaveBeenCalled();
-    expect(next).toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.any(NotFoundError));
+  });
+
+  it('batchId が空文字のときは ValidationError を投げる', async () => {
+    const req = buildRequest({ params: { batchId: '' } });
+    const res = buildResponse();
+    const next = jest.fn() as NextFunction;
+
+    await deletePrepaidBilling(req as Request, res as Response, next);
+
+    expect(mockPrisma.billing.findMany).not.toHaveBeenCalled();
+    expect(mockPrisma.billing.updateMany).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.any(ValidationError));
   });
 });
