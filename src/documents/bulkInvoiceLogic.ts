@@ -14,6 +14,10 @@
  */
 
 import type { BulkInvoiceTarget } from '@komine/types';
+import {
+  existingBillingCoverage,
+  type ExistingMgmtBilling,
+} from '../billings/managementFeeBillingService';
 
 /**
  * 対象年の判定に必要な management_fees の項目。
@@ -210,4 +214,29 @@ function compareByPlotOrder(a: BulkInvoiceTarget, b: BulkInvoiceTarget): number 
     compare(a.plotNumber, b.plotNumber) ||
     a.contractPlotId.localeCompare(b.contractPlotId)
   );
+}
+
+/**
+ * 前受済みの区画を対象から落とす（#6）
+ *
+ * 対象年の判定は management_fees.last_billing_month に依存しており、前受金を
+ * 登録しても最終請求月は動かない。そのままだと前受済みの顧客に請求書が届くため、
+ * 対象年をカバーする入金済みの管理料請求があれば落とす。
+ *
+ * 除外の鍵は「入金済み」であって「請求が存在する」ではない。未入金の請求まで
+ * 含めると、窓口で当年分だけ起票した区画へ請求書が届かなくなる（送るべき人へ
+ * 届かない方が業務上の損失が大きい）。
+ *
+ * 年が判定できない請求（use_start_year が NULL）しか無い区画は、カバーの有無を
+ * 機械判定できないので残す。いずれも送るべき人へ届かない方が損失が大きい。
+ */
+export function excludePrepaidFees(
+  fees: BulkInvoiceBillableFee[],
+  paidBillingsByPlot: Map<string, ExistingMgmtBilling[]>
+): BulkInvoiceBillableFee[] {
+  return fees.filter((fee) => {
+    const billings = paidBillingsByPlot.get(fee.contractPlotId);
+    if (!billings) return true;
+    return existingBillingCoverage(billings, fee.targetYear) !== 'covered';
+  });
 }
