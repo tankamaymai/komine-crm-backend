@@ -255,8 +255,10 @@ export async function generatePdfFromHtml(
 
     const page = await browser.newPage();
 
-    // ページ設定
-    await page.setContent(html, { waitUntil: 'networkidle0', timeout: 30000 });
+    // ページ設定。puppeteer 25 で setContent の waitUntil から networkidle0 が
+    // 外れたため、load を待ってから通信の落ち着きを別途待つ（既定値が networkidle0 相当）。
+    await page.setContent(html, { waitUntil: 'load', timeout: 30000 });
+    await page.waitForNetworkIdle({ timeout: 30000 });
 
     // PDF生成オプション
     const pdfOptions: Parameters<typeof page.pdf>[0] = {
