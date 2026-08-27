@@ -113,6 +113,10 @@ RUN apt-get update && \
         fonts-ipafont-mincho && \
     rm -rf /var/lib/apt/lists/*
 
+# ベースイメージ同梱の npm が抱える tar が CVE-2026-59873 を踏む (Trivy CRITICAL gate)。
+# 修正版 tar 7.5.19 を同梱するのは npm 12 以降なので、ここで入れ替える。
+RUN npm install -g npm@12 && npm cache clean --force
+
 # Puppeteer: システムChromiumを使用し、バンドル版ダウンロードをスキップ
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
