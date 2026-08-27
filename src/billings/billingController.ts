@@ -50,6 +50,7 @@ const formatBilling = (b: BillingWithRelations) => ({
   applicationType: b.application_type,
   billingType: b.billing_type,
   notes: b.notes,
+  prepaidBatchId: b.prepaid_batch_id,
   legacySeikyuCd: b.legacy_seikyu_cd,
   customer: b.customer
     ? { id: b.customer.id, name: b.customer.name, nameKana: b.customer.name_kana }
