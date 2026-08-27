@@ -133,3 +133,16 @@ export interface InventoryAreasData {
     totalPages: number;
   };
 }
+
+// 月次報告（区画残数）帳票用クエリスキーマ
+// asOf 相当のパラメータは意図的に持たない。physical_plots に区画の増減履歴が
+// ないため過去時点の区画数を復元できず、指定できると誤った数字を出してしまう。
+export const inventoryMonthlyReportQuerySchema = z.object({
+  // 帳票のレイアウトに載らない区画を「その他」ブロックとして含めるか。
+  // 既定 true。false にすると税理士提出物と同じ5ブロックのみになる。
+  includeOther: z
+    .enum(['true', 'false'])
+    .optional()
+    .default('true')
+    .describe('レイアウト外の区画を「その他」ブロックとして含めるか'),
+});

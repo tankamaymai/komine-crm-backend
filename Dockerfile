@@ -1,7 +1,7 @@
 # ============================================
 # Stage 0: Build @komine/types
 # ============================================
-FROM node:20-alpine AS types
+FROM node:22-alpine AS types
 
 RUN apk add --no-cache git
 
@@ -18,7 +18,7 @@ WORKDIR /packages/types
 # セキュリティ: main 追従だとリポジトリ汚染が即本番到達するため、commit SHA で固定。
 # types 更新時はこの値を明示的に更新する。
 # 詳細: zaitsu82/komine-crm-backend#60
-ARG TYPES_REF=5042ff3f73d1d69f3395c76a3c528b3583252691
+ARG TYPES_REF=4979a21ac00a9663c131a66eec081680406aa826
 
 RUN git clone https://github.com/zaitsu82/komine-types.git . && \
     git checkout ${TYPES_REF} && \
@@ -28,7 +28,7 @@ RUN git clone https://github.com/zaitsu82/komine-types.git . && \
 # ============================================
 # Stage 1: Dependencies
 # ============================================
-FROM node:20-alpine AS deps
+FROM node:22-alpine AS deps
 
 # git: GitHub URL依存パッケージのインストールに必要
 RUN apk add --no-cache git
@@ -67,7 +67,7 @@ RUN npm ci --omit=dev --ignore-scripts && \
 # ============================================
 # Stage 2: Build
 # ============================================
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 # git: GitHub URL依存パッケージのインストールに必要
 RUN apk add --no-cache git
@@ -101,7 +101,7 @@ RUN npm run build
 # ============================================
 # Stage 3: Production
 # ============================================
-FROM node:20-slim AS production
+FROM node:22-slim AS production
 
 # セキュリティ: ベースイメージの脆弱性パッチを適用してから Chromium + 日本語フォントを導入。
 # `apt-get upgrade` で libgnutls30 等の CVE 修正を取り込む (Trivy CRITICAL gate 対応)。
@@ -112,6 +112,10 @@ RUN apt-get update && \
         fonts-ipafont-gothic \
         fonts-ipafont-mincho && \
     rm -rf /var/lib/apt/lists/*
+
+# ベースイメージ同梱の npm が抱える tar が CVE-2026-59873 を踏む (Trivy CRITICAL gate)。
+# 修正版 tar 7.5.19 を同梱するのは npm 12 以降なので、ここで入れ替える。
+RUN npm install -g npm@12 && npm cache clean --force
 
 # Puppeteer: システムChromiumを使用し、バンドル版ダウンロードをスキップ
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium

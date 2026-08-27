@@ -20,6 +20,7 @@ import {
   getInventoryAreas,
   getVacantPlots,
   getPlotMap,
+  getInventoryMonthlyReport,
   getPlotHistory,
 } from './controllers';
 import { authenticate } from '../middleware/auth';
@@ -44,6 +45,7 @@ import {
   inventoryPeriodsQuerySchema,
   inventorySectionsQuerySchema,
   inventoryAreasQuerySchema,
+  inventoryMonthlyReportQuerySchema,
 } from '../validations/inventoryValidation';
 import { plotMapQuerySchema } from '../validations/plotMapValidation';
 
@@ -104,6 +106,15 @@ router.get(
   requirePermission(['viewer', 'operator', 'manager', 'admin']),
   validate({ query: inventoryAreasQuerySchema }),
   withLogging('Plots', 'getInventoryAreas', getInventoryAreas)
+);
+
+// 月次報告（区画残数）帳票 — 税理士提出用 Excel の配置を再現（議事録 2026-07-21 §6）
+router.get(
+  '/inventory/monthly-report',
+  authenticate,
+  requirePermission(['viewer', 'operator', 'manager', 'admin']),
+  validate({ query: inventoryMonthlyReportQuerySchema }),
+  withLogging('Plots', 'getInventoryMonthlyReport', getInventoryMonthlyReport)
 );
 
 // 区画図用オーバーレイ（区ごとの配置に契約・予約を重ねる）
