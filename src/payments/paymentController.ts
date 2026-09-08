@@ -36,7 +36,7 @@ type PaymentWithRelations = Prisma.PaymentGetPayload<{
 
 const toDateOrNull = (s?: string | null): Date | null => (s ? new Date(`${s}T00:00:00Z`) : null);
 
-const formatPayment = (p: PaymentWithRelations) => ({
+export const formatPayment = (p: PaymentWithRelations) => ({
   id: p.id,
   billingId: p.billing_id,
   customerId: p.customer_id,
@@ -71,7 +71,7 @@ const formatPayment = (p: PaymentWithRelations) => ({
   updatedAt: p.updated_at.toISOString(),
 });
 
-const includeRelations = {
+export const includeRelations = {
   billing: {
     select: {
       id: true,
