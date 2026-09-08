@@ -166,14 +166,14 @@ npx prisma migrate deploy
 
 招待/リセットメールのリンク先ベースURL。**末尾スラッシュ不可**（コード側で `${FRONTEND_URL}/set-password` `${FRONTEND_URL}/reset-password` と連結するため、`//set-password` になると Supabase の Redirect URL 許可リストにマッチせず Site URL にフォールバックする）。
 
-- backend env に設定（`render.yaml` / `.env.example` 記載済み・#349）。例: `FRONTEND_URL=https://komine-cemetery-crm.vercel.app`
+- backend env に設定（`render.yaml` / `.env.example` 記載済み・#349）。例: `FRONTEND_URL=https://komine-crm-frontend.vercel.app`
 - 未設定だとリセットは `localhost`、招待は Supabase Site URL にフォールバックする。
 
 #### 2. Supabase Dashboard の URL 設定
 
 **Authentication** → **URL Configuration**:
 
-- **Site URL**: 本番フロントのオリジン（例 `https://komine-cemetery-crm.vercel.app`）
+- **Site URL**: 本番フロントのオリジン（例 `https://komine-crm-frontend.vercel.app`）
 - **Redirect URLs** に許可登録（`FRONTEND_URL` と一致させること）:
   - `https://<本番フロント>/set-password`
   - `https://<本番フロント>/reset-password`

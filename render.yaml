@@ -27,7 +27,7 @@ services:
       # 末尾スラッシュ不可（コード側で `${FRONTEND_URL}/set-password` と連結するため、
       # スラッシュ付きだと `//set-password` になり Supabase の Redirect URL 許可リストに
       # マッチせず Site URL にフォールバックする）。値は Dashboard で入力。
-      # 例: https://komine-cemetery-crm.vercel.app
+      # 例: https://komine-crm-frontend.vercel.app
       - key: FRONTEND_URL
         sync: false
       - key: PUPPETEER_EXECUTABLE_PATH
