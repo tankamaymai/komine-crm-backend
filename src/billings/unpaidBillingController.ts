@@ -7,7 +7,11 @@
 
 import { Request, Response, NextFunction } from 'express';
 import { Prisma } from '@prisma/client';
-import { listUnpaidBillingsQuerySchema, type UnpaidBillingItem } from '@komine/types';
+import {
+  BillingCategory,
+  listUnpaidBillingsQuerySchema,
+  type UnpaidBillingItem,
+} from '@komine/types';
 import prisma from '../db/prisma';
 import { ValidationError } from '../middleware/errorHandler';
 import {
@@ -81,7 +85,7 @@ const toUnpaidItem = (row: UnpaidBillingRow, q: string): UnpaidBillingItem => {
     buriedPersonName: buried?.name ?? null,
     plotNumber: row.contractPlot?.physicalPlot?.plot_number ?? null,
     displayNumber: row.contractPlot?.physicalPlot?.display_number ?? null,
-    category: row.category,
+    category: row.category as BillingCategory,
     year: displayYear(row.use_start_year, row.use_end_year, jstYear(row.billing_date)),
     remainingAmount: remainingAmount(row.amount, row.paid_amount),
   };
