@@ -16,6 +16,7 @@ import {
   deletePrepaidBilling,
 } from './prepaidBillingController';
 import { getUnpaidBillings } from './unpaidBillingController';
+import { getUncollectedBillings } from './uncollectedBillingController';
 
 const router = Router();
 
@@ -43,6 +44,15 @@ router.get(
   authenticate,
   requirePermission([ROLES.VIEWER, ROLES.OPERATOR, ROLES.MANAGER, ROLES.ADMIN]),
   withLogging('Billings', 'getUnpaid', getUnpaidBillings)
+);
+
+// 未収金一覧（viewer以上）
+// ※ '/:id' より先に登録すること（後だと 'uncollected' が :id にマッチする）
+router.get(
+  '/uncollected',
+  authenticate,
+  requirePermission([ROLES.VIEWER, ROLES.OPERATOR, ROLES.MANAGER, ROLES.ADMIN]),
+  withLogging('Billings', 'getUncollected', getUncollectedBillings)
 );
 
 // 前受金プレビュー（operator以上）
