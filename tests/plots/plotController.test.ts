@@ -436,6 +436,7 @@ describe('Plot Controller (ContractPlot Model)', () => {
       const query = mockPrisma.contractPlot.findMany.mock.calls[0][0];
       // 画面表示中の display_number を基準にする（legacy plot_number 基準の乖離を解消）
       expect(query.orderBy).toEqual([
+        { physicalPlot: { area_name: 'asc' } },
         { physicalPlot: { display_number: { sort: 'asc', nulls: 'last' } } },
         { physicalPlot: { plot_number: 'asc' } },
         { id: 'asc' },
@@ -452,6 +453,7 @@ describe('Plot Controller (ContractPlot Model)', () => {
 
       const query = mockPrisma.contractPlot.findMany.mock.calls[0][0];
       expect(query.orderBy).toEqual([
+        { physicalPlot: { area_name: 'desc' } },
         { physicalPlot: { display_number: { sort: 'desc', nulls: 'last' } } },
         { physicalPlot: { plot_number: 'desc' } },
         { id: 'asc' },
@@ -493,6 +495,35 @@ describe('Plot Controller (ContractPlot Model)', () => {
       );
     });
 
+    it('should list only vacant plots when occupancy=vacant', async () => {
+      mockPrisma.contractPlot.findMany.mockResolvedValue([]);
+      mockPrisma.contractPlot.count.mockResolvedValue(0);
+
+      mockRequest.query = { page: '1', limit: '10', occupancy: 'vacant' };
+
+      await getPlots(mockRequest as Request, mockResponse as Response, mockNext);
+
+      expect(mockPrisma.contractPlot.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            contract_status: 'vacant',
+          }),
+        })
+      );
+    });
+
+    it('should not exclude vacant plots when occupancy=all', async () => {
+      mockPrisma.contractPlot.findMany.mockResolvedValue([]);
+      mockPrisma.contractPlot.count.mockResolvedValue(0);
+
+      mockRequest.query = { page: '1', limit: '10', occupancy: 'all' };
+
+      await getPlots(mockRequest as Request, mockResponse as Response, mockNext);
+
+      const whereArg = mockPrisma.contractPlot.findMany.mock.calls[0][0].where;
+      expect(whereArg.contract_status).toBeUndefined();
+    });
+
     it('should exclude vacant plots by default (#167)', async () => {
       mockPrisma.contractPlot.findMany.mockResolvedValue([]);
       mockPrisma.contractPlot.count.mockResolvedValue(0);
@@ -523,6 +554,7 @@ describe('Plot Controller (ContractPlot Model)', () => {
           contract_date: new Date('2024-01-01'),
           price: 1000000,
           payment_status: 'paid',
+          contract_status: 'active',
           physicalPlot: {
             plot_number: 'A-01',
             area_name: '一般墓地A',
@@ -544,6 +576,8 @@ describe('Plot Controller (ContractPlot Model)', () => {
           managementFee: {
             management_fee: '12000',
             last_billing_month: '2024年3月',
+            billing_type: 'PERPETUAL',
+            billing_years: '10',
           },
         },
       ];
@@ -562,6 +596,9 @@ describe('Plot Controller (ContractPlot Model)', () => {
               expect.objectContaining({
                 nextBillingDate: expect.any(Date),
                 managementFee: '12000',
+                managementFeeBillingType: 'PERPETUAL',
+                managementFeeBillingYears: '10',
+                contractStatus: 'active',
               }),
             ]),
           }),
@@ -636,6 +673,23 @@ describe('Plot Controller (ContractPlot Model)', () => {
           }),
         })
       );
+    });
+
+    it('should filter by exact area_name when cemeteryType is provided', async () => {
+      mockPrisma.contractPlot.findMany.mockResolvedValue([]);
+      mockPrisma.contractPlot.count.mockResolvedValue(0);
+
+      mockRequest.query = {
+        page: 1,
+        limit: 10,
+        cemeteryType: '1',
+      } as any;
+
+      await getPlots(mockRequest as Request, mockResponse as Response, mockNext);
+
+      const whereArg = mockPrisma.contractPlot.findMany.mock.calls[0][0].where;
+      expect(whereArg.physicalPlot.area_name).toBe('1');
+      expect(whereArg.physicalPlot.area_name).not.toEqual({ contains: '1' });
     });
 
     it('should apply grave_kind / grave_kubun / grave_type filters when provided', async () => {

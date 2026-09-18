@@ -54,6 +54,12 @@ describe('Plot Validation (ContractPlot Model)', () => {
     it('contractStatus に vacant は指定できないこと（台帳問い合わせは vacant 非表示 #167）', () => {
       expect(() => plotSearchQuerySchema.parse({ contractStatus: 'vacant' })).toThrow();
     });
+
+    it('occupancy に in_use / vacant / all を指定できること', () => {
+      expect(plotSearchQuerySchema.parse({ occupancy: 'in_use' }).occupancy).toBe('in_use');
+      expect(plotSearchQuerySchema.parse({ occupancy: 'vacant' }).occupancy).toBe('vacant');
+      expect(plotSearchQuerySchema.parse({ occupancy: 'all' }).occupancy).toBe('all');
+    });
   });
 
   describe('plotIdParamsSchema', () => {
