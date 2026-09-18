@@ -99,3 +99,29 @@ export const billingSummaryQuerySchema = z.object({
 });
 
 export type BillingSummaryQuery = z.infer<typeof billingSummaryQuerySchema>;
+
+/**
+ * 前受金一括処理（#6）
+ *
+ * 年数の上限 100 は Billing.billing_years と揃える。1 回の操作で 100 件の
+ * 請求と入金が作られるため、それ以上は入力誤りとみなす。
+ */
+export const prepaidBillingPreviewSchema = z.object({
+  contractPlotId: z.string().uuid('contractPlotId must be a UUID'),
+  receivedAmount: z.number().int().positive('受領額は1円以上で入力してください'),
+  years: z.number().int().min(1).max(100),
+  startYear: z.number().int().min(1900).max(2999).optional().nullable(),
+});
+
+export type PrepaidBillingPreviewInput = z.infer<typeof prepaidBillingPreviewSchema>;
+
+export const createPrepaidBillingSchema = z.object({
+  contractPlotId: z.string().uuid('contractPlotId must be a UUID'),
+  receivedAmount: z.number().int().positive('受領額は1円以上で入力してください'),
+  years: z.number().int().min(1).max(100),
+  startYear: z.number().int().min(1900).max(2999),
+  paymentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'paymentDate must be YYYY-MM-DD'),
+  notes: z.string().max(2000).optional().nullable(),
+});
+
+export type CreatePrepaidBillingInput = z.infer<typeof createPrepaidBillingSchema>;

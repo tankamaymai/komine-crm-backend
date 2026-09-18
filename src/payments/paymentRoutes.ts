@@ -9,6 +9,7 @@ import {
   updatePayment,
   deletePayment,
 } from './paymentController';
+import { settleRemaining } from './settleRemaining';
 
 const router = Router();
 
@@ -17,6 +18,13 @@ router.get(
   authenticate,
   requirePermission([ROLES.VIEWER, ROLES.OPERATOR, ROLES.MANAGER, ROLES.ADMIN]),
   withLogging('Payments', 'getList', getPayments)
+);
+
+router.post(
+  '/settle-remaining',
+  authenticate,
+  requirePermission([ROLES.OPERATOR, ROLES.MANAGER, ROLES.ADMIN]),
+  withLogging('Payments', 'settleRemaining', settleRemaining)
 );
 
 router.get(

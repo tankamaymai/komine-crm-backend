@@ -873,6 +873,8 @@ model Billing {
 
   // メタ
   notes            String? @db.Text
+  // 前受金一括登録の単位。同じ値を持つ Billing / Payment がまとめて取り消される
+  prepaid_batch_id String?
   legacy_seikyu_cd Int?    @unique // レガシー seikyu_cd を保持（移行時の照合用）
 
   created_at DateTime  @default(now())
@@ -890,6 +892,7 @@ model Billing {
   @@index([status])
   @@index([billing_date])
   @@index([deleted_at])
+  @@index([prepaid_batch_id])
   @@index([legacy_seikyu_cd])
   @@map("billings")
 }
@@ -921,6 +924,8 @@ model Payment {
 
   // メタ
   notes            String? @db.Text
+  // 前受金一括登録の単位。同じ値を持つ Billing / Payment がまとめて取り消される
+  prepaid_batch_id String?
   legacy_nyukin_cd Int?    @unique // レガシー nyukin_cd を保持
 
   created_at DateTime  @default(now())
@@ -937,6 +942,7 @@ model Payment {
   @@index([contract_plot_id])
   @@index([payment_date])
   @@index([deleted_at])
+  @@index([prepaid_batch_id])
   @@index([legacy_nyukin_cd])
   @@map("payments")
 }

@@ -1,8 +1,9 @@
 {
   "compilerOptions": {
     "target": "ES2020",
-    "module": "Node16",
-    "moduleResolution": "node16",
+    // puppeteer 25 は ESM 専用。Node 22.12+ の require(ESM) を型側でも許すため nodenext にする
+    "module": "NodeNext",
+    "moduleResolution": "nodenext",
     "outDir": "./dist",
     "rootDir": "./src",
 

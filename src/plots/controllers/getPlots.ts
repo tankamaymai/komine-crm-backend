@@ -17,6 +17,7 @@ interface PlotSearchQuery {
   cemeteryType?: string;
   paymentStatus?: 'unpaid' | 'partial_paid' | 'paid' | 'overdue' | 'refunded';
   contractStatus?: 'active' | 'terminated';
+  occupancy?: 'in_use' | 'vacant' | 'all';
   sortBy?:
     | 'plotNumber'
     | 'customerName'
@@ -96,6 +97,7 @@ export const getPlots = async (req: Request, res: Response, next: NextFunction) 
       cemeteryType,
       paymentStatus,
       contractStatus,
+      occupancy,
       sortBy,
       sortOrder = 'asc',
       nameKanaPrefix,
@@ -109,13 +111,17 @@ export const getPlots = async (req: Request, res: Response, next: NextFunction) 
     const take = limit;
 
     // 検索条件の構築
-    // 台帳問い合わせ（/plots）には契約のない空き区画（contract_status='vacant'）を表示しない。
-    // 空き区画は区画残数管理（/plot-availability, inventory系）にのみ表示する（#167）。
-    // active / terminated は過去・現在の契約がある区画のため従来どおり一覧へ含める。
+    // 既定は利用中（vacant 以外）。occupancy で空きだけ／全部を切り替える。
+    // active / terminated はどちらも契約履歴があるため「利用中」に含める（#167）。
+    const occupancyFilter = occupancy ?? 'in_use';
     const whereCondition: Prisma.ContractPlotWhereInput = {
       deleted_at: null,
-      contract_status: { not: 'vacant' },
     };
+    if (occupancyFilter === 'vacant') {
+      whereCondition.contract_status = 'vacant';
+    } else if (occupancyFilter === 'in_use') {
+      whereCondition.contract_status = { not: 'vacant' };
+    }
 
     // フリーテキスト検索（区画番号、顧客名、顧客名カナ、電話番号、住所）
     if (search) {
@@ -167,11 +173,11 @@ export const getPlots = async (req: Request, res: Response, next: NextFunction) 
       };
     }
 
-    // 墓地タイプフィルター
+    // 墓地タイプフィルター（台帳のエリア選択。選択肢は実データの area_name なので完全一致）
     if (cemeteryType) {
       whereCondition.physicalPlot = {
         ...((whereCondition.physicalPlot as object) || {}),
-        area_name: { contains: cemeteryType, mode: 'insensitive' },
+        area_name: cemeteryType,
       };
     }
 
@@ -181,8 +187,8 @@ export const getPlots = async (req: Request, res: Response, next: NextFunction) 
     }
 
     // 契約ステータスフィルター（#200）
-    // スキーマで active / terminated に限定済みのため、既定の vacant 除外と矛盾しない
-    if (contractStatus) {
+    // 空きだけ表示中は上書きしない。全部／利用中のときだけ active / terminated を重ねる。
+    if (contractStatus && occupancyFilter !== 'vacant') {
       whereCondition.contract_status = contractStatus;
     }
 
@@ -231,12 +237,11 @@ export const getPlots = async (req: Request, res: Response, next: NextFunction) 
       | Prisma.ContractPlotOrderByWithRelationInput[];
     switch (sortBy) {
       case 'plotNumber':
-        // 区画番号ソートは画面に表示している display_number（#158）を基準にする。
-        // 移行 plot_number は `legacy-{grave_cd}` 文字列で表示順と乖離するため、
-        // display_number 優先 → plot_number フォールバック → id の複合 orderBy にする。
-        // display_number 未設定（本番 6255 件中 1 件のみ）は nulls:'last' で末尾固定し、
-        // 同値時の安定性のため id を最終キーに付与してページ跨ぎ順序を固定する（#388）。
+        // 紙の台帳と同じく「エリア → 区画番号」でまとめる。
+        // display_number だけだと、6区の1番と11区の1番が隣同士になり、場所が追えない。
+        // display_number 優先 → plot_number フォールバック → id でページ跨ぎを固定（#388）。
         orderByCondition = [
+          { physicalPlot: { area_name: sortOrder } },
           { physicalPlot: { display_number: { sort: sortOrder, nulls: 'last' } } },
           { physicalPlot: { plot_number: sortOrder } },
           { id: 'asc' },
@@ -394,6 +399,7 @@ export const getPlots = async (req: Request, res: Response, next: NextFunction) 
         contractDate: contractPlot.contract_date,
         price: contractPlot.price, // Int型なのでそのまま
         paymentStatus: contractPlot.payment_status,
+        contractStatus: contractPlot.contract_status,
 
         // 顧客情報（主契約者のみ - 後方互換性）
         customerName: primaryCustomer?.name || null,
@@ -429,6 +435,8 @@ export const getPlots = async (req: Request, res: Response, next: NextFunction) 
         // 料金情報
         nextBillingDate,
         managementFee: contractPlot.managementFee?.management_fee || null,
+        managementFeeBillingType: contractPlot.managementFee?.billing_type ?? null,
+        managementFeeBillingYears: contractPlot.managementFee?.billing_years ?? null,
         uncollectedAmount: contractPlot.uncollected_amount,
 
         // 請求状況サマリ（B10: 年度別請求 status の集約列）

@@ -27,6 +27,7 @@ describe('generatePdfFromHtml の同時実行制限（#229）', () => {
 
       const page = {
         setContent: jest.fn().mockResolvedValue(undefined),
+        waitForNetworkIdle: jest.fn().mockResolvedValue(undefined),
         pdf: jest.fn().mockImplementation(
           () =>
             new Promise((resolve) => {
@@ -73,6 +74,7 @@ describe('generatePdfFromHtml の同時実行制限（#229）', () => {
     mockedLaunch.mockImplementation(async () => ({
       newPage: jest.fn().mockResolvedValue({
         setContent: jest.fn().mockResolvedValue(undefined),
+        waitForNetworkIdle: jest.fn().mockResolvedValue(undefined),
         pdf: jest.fn().mockResolvedValue(new Uint8Array([1])),
       }),
       close: jest.fn().mockResolvedValue(undefined),

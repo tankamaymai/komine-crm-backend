@@ -108,6 +108,7 @@ const buildBillingRow = (overrides: Record<string, unknown> = {}) => ({
   application_type: null,
   billing_type: null,
   notes: null,
+  prepaid_batch_id: null,
   legacy_seikyu_cd: null,
   customer: { id: CUSTOMER_UUID, name: '山田太郎', name_kana: 'ヤマダタロウ' },
   contractPlot: {
@@ -156,6 +157,7 @@ describe('billingController', () => {
         billingDate: '2026-04-01',
         plotNumber: 'A-1',
         areaName: '第1期',
+        prepaidBatchId: null,
       });
       expect(payload.data.pagination).toEqual({
         page: 1,
@@ -163,6 +165,19 @@ describe('billingController', () => {
         totalCount: 1,
         totalPages: 1,
       });
+    });
+
+    it('maps prepaid_batch_id to prepaidBatchId for batch cancel', async () => {
+      mockPrisma.billing.findMany.mockResolvedValue([
+        buildBillingRow({ prepaid_batch_id: 'batch-1' }),
+      ]);
+      mockPrisma.billing.count.mockResolvedValue(1);
+
+      const req = buildRequest({ query: { page: '1', limit: '10' } });
+      await getBillings(req as Request, res as Response, next);
+
+      const payload = (res.json as jest.Mock).mock.calls[0][0];
+      expect(payload.data.items[0].prepaidBatchId).toBe('batch-1');
     });
 
     it('applies filter conditions to where clause', async () => {

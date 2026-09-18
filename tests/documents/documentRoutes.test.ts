@@ -1,3 +1,6 @@
+// puppeteer 25 は ESM 専用で CommonJS の Jest から読めないため、実物を読ませない
+jest.mock('puppeteer', () => ({ launch: jest.fn() }));
+
 import request from 'supertest';
 import express from 'express';
 import documentRoutes from '../../src/documents/documentRoutes';
