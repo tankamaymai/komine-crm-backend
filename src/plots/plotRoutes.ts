@@ -19,6 +19,7 @@ import {
   getInventorySections,
   getInventoryAreas,
   getVacantPlots,
+  getContractorPlots,
   getPlotMap,
   getInventoryMonthlyReport,
   getPlotHistory,
@@ -30,6 +31,7 @@ import { withLogging } from '../middleware/controllerLogger';
 import {
   plotSearchQuerySchema,
   plotIdParamsSchema,
+  contractorIdParamsSchema,
   createPlotSchema,
   createPhysicalPlotSchema,
   createPhysicalPlotsBulkSchema,
@@ -134,6 +136,15 @@ router.get(
   requirePermission(['viewer', 'operator', 'manager', 'admin']),
   validate({ query: vacantPlotsQuerySchema }),
   withLogging('Plots', 'getVacantPlots', getVacantPlots)
+);
+
+// 契約者の区画番号（許可証1枚にまとめるため）。'/:id' より前に置く。
+router.get(
+  '/contractor/:customerId/plots',
+  authenticate,
+  requirePermission(['viewer', 'operator', 'manager', 'admin']),
+  validate({ params: contractorIdParamsSchema }),
+  withLogging('Plots', 'getContractorPlots', getContractorPlots)
 );
 
 // ==========================================

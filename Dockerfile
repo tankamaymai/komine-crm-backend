@@ -20,7 +20,7 @@ WORKDIR /packages/types
 # 詳細: zaitsu82/komine-crm-backend#60
 ARG TYPES_REF=60a8e53e743abd07d8b57a304e56343741429d9a
 
-RUN git clone https://github.com/zaitsu82/komine-types.git . && \
+RUN git clone https://github.com/tankamaymai/komine-types.git . && \
     git checkout ${TYPES_REF} && \
     npm ci && \
     npm run build

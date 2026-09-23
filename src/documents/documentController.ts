@@ -628,7 +628,7 @@ export const generatePdf = async (req: Request, res: Response): Promise<void> =>
       });
       return;
     }
-    const { templateType, templateData, documentId, name, contractPlotId, customerId } =
+    const { templateType, templateData, documentId, name, contractPlotId, customerId, textOnly } =
       parsed.data;
 
     // 関連データの存在確認（Zod は UUID 形式しか見ないため、
@@ -639,8 +639,12 @@ export const generatePdf = async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
-    // PDF生成
-    const pdfResult = await generatePdfFromTemplate(templateType, templateData as PdfTemplateData);
+    // textOnly は許可証・封筒書の直接印刷。絵は入れず、書類の保存もしない。
+    const textOnlyPrint =
+      textOnly === true && (templateType === 'permit' || templateType === 'envelope-letter');
+    const pdfResult = await generatePdfFromTemplate(templateType, templateData as PdfTemplateData, {
+      textOnly: textOnlyPrint,
+    });
 
     if (!pdfResult.success || !pdfResult.buffer) {
       res.status(500).json({
@@ -648,6 +652,19 @@ export const generatePdf = async (req: Request, res: Response): Promise<void> =>
         error: {
           code: 'PDF_GENERATION_ERROR',
           message: pdfResult.error || 'PDF生成に失敗しました',
+        },
+      });
+      return;
+    }
+
+    if (textOnlyPrint) {
+      res.status(200).json({
+        success: true,
+        data: {
+          documentId: documentId ?? '',
+          pdf: pdfResult.buffer.toString('base64'),
+          mimeType: 'application/pdf',
+          fileSize: pdfResult.buffer.length,
         },
       });
       return;
@@ -834,8 +851,13 @@ export const regeneratePdf = async (req: Request, res: Response): Promise<void> 
       throw err;
     }
 
-    // PDF再生成
-    const pdfResult = await generatePdfFromTemplate(document.template_type, templateData);
+    // 直接印刷は、保存済みの文字だけを同じ位置に出す。発行日時は動かさない。
+    const textOnlyPrint =
+      req.body?.textOnly === true &&
+      (document.template_type === 'permit' || document.template_type === 'envelope-letter');
+    const pdfResult = await generatePdfFromTemplate(document.template_type, templateData, {
+      textOnly: textOnlyPrint,
+    });
 
     if (!pdfResult.success || !pdfResult.buffer) {
       res.status(500).json({
@@ -848,20 +870,22 @@ export const regeneratePdf = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    // PDF を再発行したので generated_at を更新し、履歴に残す
-    const regeneratedAt = new Date();
-    await prisma.document.update({
-      where: { id: document.id },
-      data: { generated_at: regeneratedAt },
-    });
-    await recordDocumentUpdated(
-      prisma,
-      { generated_at: document.generated_at },
-      { generated_at: regeneratedAt },
-      document.id,
-      document.contract_plot_id,
-      req
-    );
+    if (!textOnlyPrint) {
+      // PDF を再発行したので generated_at を更新し、履歴に残す
+      const regeneratedAt = new Date();
+      await prisma.document.update({
+        where: { id: document.id },
+        data: { generated_at: regeneratedAt },
+      });
+      await recordDocumentUpdated(
+        prisma,
+        { generated_at: document.generated_at },
+        { generated_at: regeneratedAt },
+        document.id,
+        document.contract_plot_id,
+        req
+      );
+    }
 
     const fileName = sanitizeDocumentFileName(document.name);
 

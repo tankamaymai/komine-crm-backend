@@ -69,6 +69,10 @@ export const plotIdParamsSchema = z.object({
   id: uuidSchema,
 });
 
+export const contractorIdParamsSchema = z.object({
+  customerId: uuidSchema,
+});
+
 /**
  * 物理区画情報のバリデーションスキーマ（作成用）
  * 共有スキーマ（@komine/types/validations）をベースに、作成時のid任意付与に対応。

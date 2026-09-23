@@ -47,7 +47,6 @@
   "description": "",
   "dependencies": {
     "@komine/types": "file:../packages/types",
-    "@pdf-lib/fontkit": "^1.1.1",
     "@prisma/adapter-pg": "^7.4.2",
     "@prisma/client": "^7.0.0",
     "@sentry/node": "^10.39.0",
@@ -64,6 +63,7 @@
     "js-yaml": "^4.1.1",
     "multer": "^2.1.1",
     "mysql2": "^3.22.3",
+    "pdf-fontkit": "^1.8.9",
     "pdf-lib": "^1.17.1",
     "pino": "^10.3.1",
     "puppeteer": "^25.9.0",
