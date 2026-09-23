@@ -388,15 +388,21 @@ export async function generatePdfFromTemplate(
   data: PdfTemplateData,
   options?: {
     landscape?: boolean;
+    /** true なら台紙や封筒の絵を描かず、入力文字だけを同じ位置に置く */
+    textOnly?: boolean;
   }
 ): Promise<{ success: boolean; buffer?: Buffer; error?: string }> {
   try {
     // 許可証は既存のテンプレートPDFに pdf-lib で文字を重ねる
     if (templateType === 'permit') {
-      return await generatePermitPdf(data as PermitTemplateData);
+      return await generatePermitPdf(data as PermitTemplateData, {
+        includeBackground: !options?.textOnly,
+      });
     }
     if (templateType === 'envelope-letter') {
-      return await generateEnvelopeLetterPdf(data as PermitTemplateData);
+      return await generateEnvelopeLetterPdf(data as PermitTemplateData, {
+        includeBackground: !options?.textOnly,
+      });
     }
     if (templateType === 'envelope-base') {
       return await generateEnvelopeBasePdf(data as PermitTemplateData);
