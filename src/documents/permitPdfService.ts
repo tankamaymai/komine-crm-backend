@@ -6,7 +6,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { PDFDocument, rgb, degrees, PDFFont } from 'pdf-lib';
-import fontkit from '@pdf-lib/fontkit';
+import fontkit from 'pdf-fontkit';
 import {
   PERMIT_CERTIFICATE_PAGES,
   ENVELOPE_LETTER_PAGES,
@@ -54,12 +54,14 @@ function drawField(
   const size = field.fontSize;
 
   if (field.direction === 'vertical') {
+    // field.y は 1 文字目の上端。文字の頭がそこへ来るよう、少し下げて描く。
     const lineHeight = field.lineHeight ?? size * 1.3;
+    const firstBaseline = field.y - size * 0.88;
     const chars = Array.from(value);
     chars.forEach((ch, i) => {
       const w = font.widthOfTextAtSize(ch, size);
       const cx = field.x - w / 2;
-      const cy = field.y - i * lineHeight;
+      const cy = firstBaseline - i * lineHeight;
       page.drawText(ch, {
         x: cx,
         y: cy,
@@ -109,39 +111,45 @@ function drawField(
  */
 export async function generatePermitPdfFromPages(
   pages: readonly PermitPage[],
-  data: PermitTemplateData
+  data: PermitTemplateData,
+  options?: { includeBackground?: boolean }
 ): Promise<{ success: boolean; buffer?: Buffer; error?: string }> {
   try {
     const fonts = loadFonts();
     const outDoc = await PDFDocument.create();
     outDoc.registerFontkit(fontkit);
-    // subset: true で使用グリフのみ埋め込む（#237）。
-    // NotoSansJP Regular/Bold は各約5MBあり、subset: false（全グリフ埋め込み）だと
-    // 1ページの許可証PDFが約6.3MB（base64で約8.5MB）になる。subset: true なら約340KB。
-    // 初版では「subset=true だと CIDマップ不整合で一部文字が欠ける」懸念から
-    // 全グリフ埋め込みにしていたが、現行の pdf-lib + fontkit では縦書き・回転を
-    // 含む全テンプレート文字の描画をテストで回帰担保した上でサブセット化する。
+    // subset: true で、入力に使った文字だけを PDF に入れる（#237）。
+    // NotoSansJP Regular/Bold は各約5MBあり、全部入れると許可証1枚が約6MBになる。
+    // @pdf-lib/fontkit のまま subset すると字形テーブルが壊れ、
+    // 入れた名前や住所の一部が PDF 上で消える。pdf-fontkit なら形が残る。
     const fontRegular = await outDoc.embedFont(fonts.regular, { subset: true });
     const fontBold = await outDoc.embedFont(fonts.bold, { subset: true });
 
+    const includeBackground = options?.includeBackground !== false;
+
     for (const pageDef of pages) {
       if (!pageDef.enabled) continue;
-      const basePath = path.join(TEMPLATE_DIR, pageDef.baseFile);
-      if (!fs.existsSync(basePath)) {
-        throw new Error(`Permit base PDF が見つかりません: ${pageDef.baseFile}`);
-      }
-
-      const baseBytes = fs.readFileSync(basePath);
-      const embeddedPages = await outDoc.embedPdf(baseBytes);
-      const embeddedPage = embeddedPages[0];
       const newPage = outDoc.addPage([pageDef.widthPt, pageDef.heightPt]);
-      if (embeddedPage) {
-        newPage.drawPage(embeddedPage, {
-          x: 0,
-          y: 0,
-          width: pageDef.widthPt,
-          height: pageDef.heightPt,
-        });
+
+      // 厚紙印刷は、すでに刷ってある台紙の上に文字だけを載せる。
+      // PDF保存のときは台紙の絵も一緒に残す。
+      if (includeBackground) {
+        const basePath = path.join(TEMPLATE_DIR, pageDef.baseFile);
+        if (!fs.existsSync(basePath)) {
+          throw new Error(`Permit base PDF が見つかりません: ${pageDef.baseFile}`);
+        }
+
+        const baseBytes = fs.readFileSync(basePath);
+        const embeddedPages = await outDoc.embedPdf(baseBytes);
+        const embeddedPage = embeddedPages[0];
+        if (embeddedPage) {
+          newPage.drawPage(embeddedPage, {
+            x: 0,
+            y: 0,
+            width: pageDef.widthPt,
+            height: pageDef.heightPt,
+          });
+        }
       }
 
       for (const field of pageDef.fields) {
@@ -163,15 +171,17 @@ export async function generatePermitPdfFromPages(
 
 /** 許可証は1ページ（許可証書）のみ */
 export async function generatePermitPdf(
-  data: PermitTemplateData
+  data: PermitTemplateData,
+  options?: { includeBackground?: boolean }
 ): Promise<{ success: boolean; buffer?: Buffer; error?: string }> {
-  return generatePermitPdfFromPages(PERMIT_CERTIFICATE_PAGES, data);
+  return generatePermitPdfFromPages(PERMIT_CERTIFICATE_PAGES, data, options);
 }
 
 export async function generateEnvelopeLetterPdf(
-  data: PermitTemplateData
+  data: PermitTemplateData,
+  options?: { includeBackground?: boolean }
 ): Promise<{ success: boolean; buffer?: Buffer; error?: string }> {
-  return generatePermitPdfFromPages(ENVELOPE_LETTER_PAGES, data);
+  return generatePermitPdfFromPages(ENVELOPE_LETTER_PAGES, data, options);
 }
 
 export async function generateEnvelopeBasePdf(

@@ -63,6 +63,23 @@ export const listPaymentsQuerySchema = z.object({
   billingId: z.string().uuid().optional(),
   customerId: z.string().uuid().optional(),
   contractPlotId: z.string().uuid().optional(),
+  /**
+   * 顧客名の部分一致（議事録 2026-07-21 §7）。
+   * 現金受領時に名前で対象者を探す用途。漢字・カナの両方を対象にする
+   * （議事録 §3 の「ひらがなでも漢字でも検索」と揃える）。
+   */
+  name: z.string().max(100).optional(),
+  /**
+   * 請求年月の絞り込み（議事録 2026-07-21 §7）。"2026-03" 形式。
+   *
+   * 請求を出した日（billing_date）ではなく、請求の対象期間で絞る。
+   * 「2026年3月分の請求」を探す用途のため、Billing.use_start_year + target_month に
+   * 一致させる（実データで target_month は 11,489/11,492 件に入っている）。
+   */
+  billingYearMonth: z
+    .string()
+    .regex(/^\d{4}-(0[1-9]|1[0-2])$/, '請求年月は YYYY-MM 形式で指定してください')
+    .optional(),
   paymentDateFrom: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)

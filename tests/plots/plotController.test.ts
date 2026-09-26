@@ -113,6 +113,9 @@ const mockPrisma: any = {
     create: jest.fn(),
     createMany: jest.fn(),
   },
+  sectionNameMaster: {
+    findMany: jest.fn(),
+  },
   collectiveBurial: {
     findUnique: jest.fn(),
     findMany: jest.fn(),
@@ -246,6 +249,7 @@ describe('Plot Controller (ContractPlot Model)', () => {
     // 合祀カウントダウンの起点は「最終納骨者の埋葬日、無ければ契約日」（議事録 2026-07-21 §1）。
     // 既定は最終納骨者なし＝契約日起点。最終納骨日起点のケースは個別テストで上書きする。
     mockPrisma.buriedPerson.findFirst.mockResolvedValue(null);
+    mockPrisma.sectionNameMaster.findMany.mockResolvedValue([]);
   });
 
   describe('getPlots', () => {
@@ -425,37 +429,84 @@ describe('Plot Controller (ContractPlot Model)', () => {
       ]);
     });
 
-    it('sortBy=plotNumber は display_number 優先＋plot_number フォールバックの複合 orderBy にする (#388)', async () => {
-      mockPrisma.contractPlot.findMany.mockResolvedValueOnce([]);
-      mockPrisma.contractPlot.count.mockResolvedValue(0);
-
-      mockRequest.query = { page: '1', limit: '10', sortBy: 'plotNumber', sortOrder: 'asc' };
+    it('sortBy=plotNumber は第1期を第2期より前に並べること', async () => {
+      mockPrisma.sectionNameMaster.findMany.mockResolvedValue([
+        { name: 'A', period: '第1期' },
+        { name: '1', period: '第2期' },
+      ]);
+      const row = (id: string, areaName: string) => ({
+        id,
+        contract_area_sqm: new Prisma.Decimal(3.6),
+        location_description: null,
+        contract_date: new Date('2024-01-01'),
+        price: 1000000,
+        payment_status: 'paid',
+        contract_status: 'active',
+        notes: null,
+        agent_name: null,
+        permit_number: null,
+        uncollected_amount: 0,
+        created_at: new Date('2024-01-01'),
+        updated_at: new Date('2024-01-01'),
+        physicalPlot: {
+          plot_number: `${areaName}-1`,
+          display_number: `${areaName}-1`,
+          area_name: areaName,
+          area_sqm: new Prisma.Decimal(3.6),
+          status: 'sold_out',
+        },
+        saleContractRoles: [],
+        buriedPersons: [],
+        managementFee: null,
+        billings: [],
+      });
+      mockPrisma.contractPlot.findMany.mockResolvedValue([row('second', '1'), row('first', 'A')]);
+      mockRequest.query = { page: 1, limit: 10, sortBy: 'plotNumber', sortOrder: 'asc' } as any;
 
       await getPlots(mockRequest as Request, mockResponse as Response, mockNext);
 
-      const query = mockPrisma.contractPlot.findMany.mock.calls[0][0];
-      // 画面表示中の display_number を基準にする（legacy plot_number 基準の乖離を解消）
-      expect(query.orderBy).toEqual([
-        { physicalPlot: { display_number: { sort: 'asc', nulls: 'last' } } },
-        { physicalPlot: { plot_number: 'asc' } },
-        { id: 'asc' },
-      ]);
+      const body = responseJson.mock.calls[0][0];
+      expect(body.data.data.map((item: { id: string }) => item.id)).toEqual(['first', 'second']);
     });
 
-    it('sortBy=plotNumber 降順でも display_number 未設定は末尾固定（nulls:last）にする (#388)', async () => {
-      mockPrisma.contractPlot.findMany.mockResolvedValueOnce([]);
-      mockPrisma.contractPlot.count.mockResolvedValue(0);
-
-      mockRequest.query = { page: '1', limit: '10', sortBy: 'plotNumber', sortOrder: 'desc' };
+    it('sortBy=plotNumber 降順でも表示用番号が空の行は比較関数で末尾に残る', async () => {
+      mockPrisma.sectionNameMaster.findMany.mockResolvedValue([{ name: 'A', period: '第1期' }]);
+      const row = (id: string, displayNumber: string | null) => ({
+        id,
+        contract_area_sqm: new Prisma.Decimal(3.6),
+        location_description: null,
+        contract_date: null,
+        price: null,
+        payment_status: 'unpaid',
+        contract_status: 'active',
+        notes: null,
+        agent_name: null,
+        permit_number: null,
+        uncollected_amount: 0,
+        created_at: new Date('2024-01-01'),
+        updated_at: new Date('2024-01-01'),
+        physicalPlot: {
+          plot_number: id,
+          display_number: displayNumber,
+          area_name: 'A',
+          area_sqm: new Prisma.Decimal(3.6),
+          status: 'sold_out',
+        },
+        saleContractRoles: [],
+        buriedPersons: [],
+        managementFee: null,
+        billings: [],
+      });
+      mockPrisma.contractPlot.findMany.mockResolvedValue([
+        row('empty', null),
+        row('filled', 'A-2'),
+      ]);
+      mockRequest.query = { page: 1, limit: 10, sortBy: 'plotNumber', sortOrder: 'desc' } as any;
 
       await getPlots(mockRequest as Request, mockResponse as Response, mockNext);
 
-      const query = mockPrisma.contractPlot.findMany.mock.calls[0][0];
-      expect(query.orderBy).toEqual([
-        { physicalPlot: { display_number: { sort: 'desc', nulls: 'last' } } },
-        { physicalPlot: { plot_number: 'desc' } },
-        { id: 'asc' },
-      ]);
+      const body = responseJson.mock.calls[0][0];
+      expect(body.data.data.map((item: { id: string }) => item.id)).toEqual(['filled', 'empty']);
     });
 
     it('一覧 include の saleContractRoles を snapshot と同一順序（created_at asc, id asc）で取得する (#303)', async () => {
@@ -493,6 +544,35 @@ describe('Plot Controller (ContractPlot Model)', () => {
       );
     });
 
+    it('should list only vacant plots when occupancy=vacant', async () => {
+      mockPrisma.contractPlot.findMany.mockResolvedValue([]);
+      mockPrisma.contractPlot.count.mockResolvedValue(0);
+
+      mockRequest.query = { page: '1', limit: '10', occupancy: 'vacant' };
+
+      await getPlots(mockRequest as Request, mockResponse as Response, mockNext);
+
+      expect(mockPrisma.contractPlot.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            contract_status: 'vacant',
+          }),
+        })
+      );
+    });
+
+    it('should not exclude vacant plots when occupancy=all', async () => {
+      mockPrisma.contractPlot.findMany.mockResolvedValue([]);
+      mockPrisma.contractPlot.count.mockResolvedValue(0);
+
+      mockRequest.query = { page: '1', limit: '10', occupancy: 'all' };
+
+      await getPlots(mockRequest as Request, mockResponse as Response, mockNext);
+
+      const whereArg = mockPrisma.contractPlot.findMany.mock.calls[0][0].where;
+      expect(whereArg.contract_status).toBeUndefined();
+    });
+
     it('should exclude vacant plots by default (#167)', async () => {
       mockPrisma.contractPlot.findMany.mockResolvedValue([]);
       mockPrisma.contractPlot.count.mockResolvedValue(0);
@@ -523,6 +603,7 @@ describe('Plot Controller (ContractPlot Model)', () => {
           contract_date: new Date('2024-01-01'),
           price: 1000000,
           payment_status: 'paid',
+          contract_status: 'active',
           physicalPlot: {
             plot_number: 'A-01',
             area_name: '一般墓地A',
@@ -544,6 +625,8 @@ describe('Plot Controller (ContractPlot Model)', () => {
           managementFee: {
             management_fee: '12000',
             last_billing_month: '2024年3月',
+            billing_type: 'PERPETUAL',
+            billing_years: '10',
           },
         },
       ];
@@ -562,6 +645,9 @@ describe('Plot Controller (ContractPlot Model)', () => {
               expect.objectContaining({
                 nextBillingDate: expect.any(Date),
                 managementFee: '12000',
+                managementFeeBillingType: 'PERPETUAL',
+                managementFeeBillingYears: '10',
+                contractStatus: 'active',
               }),
             ]),
           }),
@@ -636,6 +722,41 @@ describe('Plot Controller (ContractPlot Model)', () => {
           }),
         })
       );
+    });
+
+    it('should filter by exact area_name when cemeteryType is provided', async () => {
+      mockPrisma.contractPlot.findMany.mockResolvedValue([]);
+      mockPrisma.contractPlot.count.mockResolvedValue(0);
+
+      mockRequest.query = {
+        page: 1,
+        limit: 10,
+        cemeteryType: '1',
+      } as any;
+
+      await getPlots(mockRequest as Request, mockResponse as Response, mockNext);
+
+      const whereArg = mockPrisma.contractPlot.findMany.mock.calls[0][0].where;
+      expect(whereArg.physicalPlot.area_name).toBe('1');
+      expect(whereArg.physicalPlot.area_name).not.toEqual({ contains: '1' });
+    });
+
+    it('period でその期の区画名に絞ること', async () => {
+      mockPrisma.sectionNameMaster.findMany.mockResolvedValue([
+        { name: 'A', period: '第1期' },
+        { name: '10', period: '第3期' },
+      ]);
+      mockPrisma.contractPlot.findMany.mockResolvedValue([]);
+      mockPrisma.contractPlot.count.mockResolvedValue(0);
+      mockRequest.query = { page: 1, limit: 10, period: '第1期' } as any;
+
+      await getPlots(mockRequest as Request, mockResponse as Response, mockNext);
+
+      const whereArg = mockPrisma.contractPlot.findMany.mock.calls[0][0].where;
+      expect(whereArg.physicalPlot.area_name).toEqual({
+        in: expect.arrayContaining(['A', '第1期']),
+      });
+      expect(whereArg.physicalPlot.area_name.in).not.toContain('10');
     });
 
     it('should apply grave_kind / grave_kubun / grave_type filters when provided', async () => {

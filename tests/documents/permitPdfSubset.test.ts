@@ -5,16 +5,57 @@
  * - 生成が成功すること（CIDマップ不整合等で throw しない）
  * - subset: true によりサイズが大幅に縮小されていること
  *   （全グリフ埋め込みだと1ページ約6.3MB、サブセットなら数百KB）
- * を回帰担保する。縦書き（封筒系の direction: 'vertical'）・回転を含む
- * 全テンプレート経路をカバーする。
+ * を回帰担保する。加えて、埋め込んだ文字の形が壊れていないこと
+ * （入力した文字が PDF 上で欠けないこと）を見る。
  */
 import type { PermitTemplateData } from '@komine/types';
+import fontkit from 'pdf-fontkit';
+import { decodePDFRawStream, PDFDict, PDFDocument, PDFName, PDFRawStream } from 'pdf-lib';
 
 import {
   generatePermitPdf,
   generateEnvelopeLetterPdf,
   generateEnvelopeBasePdf,
 } from '../../src/documents/permitPdfService';
+
+/**
+ * 入力文字が PDF 上で欠けないこと。
+ * @pdf-lib/fontkit のサブセットは Noto Sans JP の字形テーブルを壊し、
+ * 画面では文字が途中までしか出ない。壊れた字形は読み出しで例外になる。
+ */
+async function assertEmbeddedGlyphsAreDrawable(buffer: Buffer): Promise<void> {
+  const doc = await PDFDocument.load(buffer);
+  let fontFiles = 0;
+
+  for (const [, obj] of doc.context.enumerateIndirectObjects()) {
+    if (!(obj instanceof PDFDict) || obj instanceof PDFRawStream) continue;
+    const type = obj.get(PDFName.of('Type'));
+    if (!type || type.toString() !== '/FontDescriptor') continue;
+    const fileRef = obj.get(PDFName.of('FontFile2'));
+    if (!fileRef) continue;
+    const stream = doc.context.lookup(fileRef);
+    if (!(stream instanceof PDFRawStream)) continue;
+
+    const font = fontkit.create(decodePDFRawStream(stream).decode());
+    fontFiles += 1;
+
+    let threw = 0;
+    let nonempty = 0;
+    for (let i = 0; i < font.numGlyphs; i += 1) {
+      try {
+        const glyph = font.getGlyph(i);
+        if ((glyph.path?.commands.length ?? 0) > 0) nonempty += 1;
+      } catch {
+        threw += 1;
+      }
+    }
+
+    expect(threw).toBe(0);
+    expect(nonempty).toBeGreaterThan(0);
+  }
+
+  expect(fontFiles).toBeGreaterThan(0);
+}
 
 // 漢字・かな・カナ・英数・記号を含む代表データ（全フィールド使用）
 const data: PermitTemplateData = {
@@ -74,5 +115,30 @@ describe('permitPdfService フォントサブセット（#237）', () => {
     expect(result.success).toBe(true);
     expect(result.buffer!.length).toBeGreaterThan(0);
     expect(result.buffer!.length).toBeLessThan(MAX_SUBSET_SIZE);
+  });
+
+  it('厚紙印刷用PDFは台紙の絵を入れず、入力文字だけが残ること', async () => {
+    const withSheet = await generatePermitPdf(data);
+    const textOnly = await generatePermitPdf(data, { includeBackground: false });
+
+    expect(withSheet.success).toBe(true);
+    expect(textOnly.success).toBe(true);
+    expect(textOnly.buffer!.length).toBeGreaterThan(0);
+    expect(textOnly.buffer!.length).toBeLessThan(withSheet.buffer!.length / 2);
+    await assertEmbeddedGlyphsAreDrawable(textOnly.buffer!);
+  });
+
+  it('入力した文字の形が壊れず、許可証・封筒のPDFに全部残ること', async () => {
+    const permit = await generatePermitPdf(data);
+    const letter = await generateEnvelopeLetterPdf(data);
+    const base = await generateEnvelopeBasePdf(data);
+
+    expect(permit.success).toBe(true);
+    expect(letter.success).toBe(true);
+    expect(base.success).toBe(true);
+
+    await assertEmbeddedGlyphsAreDrawable(permit.buffer!);
+    await assertEmbeddedGlyphsAreDrawable(letter.buffer!);
+    await assertEmbeddedGlyphsAreDrawable(base.buffer!);
   });
 });

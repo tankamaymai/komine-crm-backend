@@ -138,6 +138,83 @@ describe('paymentController', () => {
       });
     });
 
+    // 請求経由の入金（実データで12,505件中12,372件）は顧客が Billing 側にある。
+    // ここを返さないと名前で探す一覧に名前が出ない
+    it('請求経由の入金でも顧客名を返す', async () => {
+      mockPrisma.payment.findMany.mockResolvedValue([
+        buildPaymentRow({
+          customer: null,
+          billing: {
+            id: BILLING_UUID,
+            category: 'management_fee',
+            amount: 12000,
+            billing_date: new Date('2026-04-01'),
+            status: 'paid',
+            use_start_year: 2026,
+            target_month: 3,
+            customer: { id: 'c1', name: '田中太郎', name_kana: 'タナカタロウ' },
+          },
+        }),
+      ]);
+      mockPrisma.payment.count.mockResolvedValue(1);
+
+      const req = buildRequest({ query: {} });
+      await getPayments(req as Request, res as Response, next);
+
+      const item = (res.json as jest.Mock).mock.calls[0][0].data.items[0];
+      expect(item.customer).toEqual({ id: 'c1', name: '田中太郎', nameKana: 'タナカタロウ' });
+      expect(item.billing.billingYearMonth).toBe('2026-03');
+    });
+
+    it('直リンクの顧客がいればそちらを優先する', async () => {
+      mockPrisma.payment.findMany.mockResolvedValue([
+        buildPaymentRow({
+          customer: { id: 'direct', name: '直リンク花子', name_kana: 'チョクリンクハナコ' },
+          billing: {
+            id: BILLING_UUID,
+            category: 'management_fee',
+            amount: 12000,
+            billing_date: null,
+            status: 'paid',
+            use_start_year: 2026,
+            target_month: 3,
+            customer: { id: 'via-billing', name: '請求経由太郎', name_kana: 'セイキュウ' },
+          },
+        }),
+      ]);
+      mockPrisma.payment.count.mockResolvedValue(1);
+
+      const req = buildRequest({ query: {} });
+      await getPayments(req as Request, res as Response, next);
+
+      const item = (res.json as jest.Mock).mock.calls[0][0].data.items[0];
+      expect(item.customer.name).toBe('直リンク花子');
+    });
+
+    it('対象年・対象月が欠けていれば請求年月は null', async () => {
+      mockPrisma.payment.findMany.mockResolvedValue([
+        buildPaymentRow({
+          billing: {
+            id: BILLING_UUID,
+            category: 'management_fee',
+            amount: 12000,
+            billing_date: null,
+            status: 'paid',
+            use_start_year: null,
+            target_month: 3,
+            customer: null,
+          },
+        }),
+      ]);
+      mockPrisma.payment.count.mockResolvedValue(1);
+
+      const req = buildRequest({ query: {} });
+      await getPayments(req as Request, res as Response, next);
+
+      const item = (res.json as jest.Mock).mock.calls[0][0].data.items[0];
+      expect(item.billing.billingYearMonth).toBeNull();
+    });
+
     it('filters orphan payments when orphan=true', async () => {
       mockPrisma.payment.findMany.mockResolvedValue([]);
       mockPrisma.payment.count.mockResolvedValue(0);
@@ -147,6 +224,121 @@ describe('paymentController', () => {
 
       const callArgs = mockPrisma.payment.findMany.mock.calls[0][0];
       expect(callArgs.where.billing_id).toBeNull();
+    });
+
+    // 議事録 2026-07-21 §7: 現金受領時に名前で対象者を探す。
+    // 入金の顧客は Payment.customer（直リンク）と Billing.customer（請求経由）の
+    // 2経路あり、片方だけ見ると取りこぼす
+    it('名前で絞ると直リンクと請求経由の両方を OR で見る', async () => {
+      mockPrisma.payment.findMany.mockResolvedValue([]);
+      mockPrisma.payment.count.mockResolvedValue(0);
+
+      const req = buildRequest({ query: { name: '田中' } });
+      await getPayments(req as Request, res as Response, next);
+
+      const where = mockPrisma.payment.findMany.mock.calls[0][0].where;
+      expect(where.OR).toEqual([
+        {
+          customer: {
+            OR: [
+              { name: { contains: '田中', mode: 'insensitive' } },
+              { name_kana: { contains: '田中', mode: 'insensitive' } },
+            ],
+          },
+        },
+        {
+          billing: {
+            customer: {
+              OR: [
+                { name: { contains: '田中', mode: 'insensitive' } },
+                { name_kana: { contains: '田中', mode: 'insensitive' } },
+              ],
+            },
+          },
+        },
+      ]);
+    });
+
+    // 漢字・カナ両対応（議事録 §3 の「ひらがなでも漢字でも検索」と揃える）
+    it('名前はカナでも引ける', async () => {
+      mockPrisma.payment.findMany.mockResolvedValue([]);
+      mockPrisma.payment.count.mockResolvedValue(0);
+
+      const req = buildRequest({ query: { name: 'タナカ' } });
+      await getPayments(req as Request, res as Response, next);
+
+      const where = mockPrisma.payment.findMany.mock.calls[0][0].where;
+      expect(where.OR[0].customer.OR).toEqual(
+        expect.arrayContaining([{ name_kana: { contains: 'タナカ', mode: 'insensitive' } }])
+      );
+    });
+
+    // 請求を出した日ではなく請求の対象期間で絞る（「2026年3月分の請求」を探す用途）
+    it('請求年月で絞ると use_start_year と target_month に一致させる', async () => {
+      mockPrisma.payment.findMany.mockResolvedValue([]);
+      mockPrisma.payment.count.mockResolvedValue(0);
+
+      const req = buildRequest({ query: { billingYearMonth: '2026-03' } });
+      await getPayments(req as Request, res as Response, next);
+
+      const where = mockPrisma.payment.findMany.mock.calls[0][0].where;
+      expect(where.billing).toEqual({ use_start_year: 2026, target_month: 3 });
+    });
+
+    it('請求年月の月は先頭0付きでも数値として解釈する', async () => {
+      mockPrisma.payment.findMany.mockResolvedValue([]);
+      mockPrisma.payment.count.mockResolvedValue(0);
+
+      const req = buildRequest({ query: { billingYearMonth: '2026-09' } });
+      await getPayments(req as Request, res as Response, next);
+
+      expect(mockPrisma.payment.findMany.mock.calls[0][0].where.billing).toEqual({
+        use_start_year: 2026,
+        target_month: 9,
+      });
+    });
+
+    it('名前と請求年月は併用できる', async () => {
+      mockPrisma.payment.findMany.mockResolvedValue([]);
+      mockPrisma.payment.count.mockResolvedValue(0);
+
+      const req = buildRequest({ query: { name: '田中', billingYearMonth: '2026-03' } });
+      await getPayments(req as Request, res as Response, next);
+
+      const where = mockPrisma.payment.findMany.mock.calls[0][0].where;
+      expect(where.OR).toHaveLength(2);
+      expect(where.billing).toEqual({ use_start_year: 2026, target_month: 3 });
+    });
+
+    it('請求年月の形式が不正なら 400 相当のエラーを渡す', async () => {
+      const req = buildRequest({ query: { billingYearMonth: '2026/03' } });
+      await getPayments(req as Request, res as Response, next);
+
+      expect(next).toHaveBeenCalled();
+      expect((next as jest.Mock).mock.calls[0][0].message).toBe(
+        '請求年月は YYYY-MM 形式で指定してください'
+      );
+      expect(mockPrisma.payment.findMany).not.toHaveBeenCalled();
+    });
+
+    it('存在しない月（13月）は弾く', async () => {
+      const req = buildRequest({ query: { billingYearMonth: '2026-13' } });
+      await getPayments(req as Request, res as Response, next);
+
+      expect(next).toHaveBeenCalled();
+      expect(mockPrisma.payment.findMany).not.toHaveBeenCalled();
+    });
+
+    it('名前・請求年月を指定しなければ絞り込みを足さない', async () => {
+      mockPrisma.payment.findMany.mockResolvedValue([]);
+      mockPrisma.payment.count.mockResolvedValue(0);
+
+      const req = buildRequest({ query: {} });
+      await getPayments(req as Request, res as Response, next);
+
+      const where = mockPrisma.payment.findMany.mock.calls[0][0].where;
+      expect(where.OR).toBeUndefined();
+      expect(where.billing).toBeUndefined();
     });
 
     it('filters non-orphan payments when orphan=false', async () => {

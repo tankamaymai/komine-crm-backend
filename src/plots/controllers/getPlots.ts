@@ -8,6 +8,12 @@
 import { Request, Response, NextFunction } from 'express';
 import { Prisma } from '@prisma/client';
 import prisma from '../../db/prisma';
+import {
+  areaNamesForPeriod,
+  loadSectionPeriodMap,
+  resolvePeriod,
+} from '../services/inventoryService';
+import { compareLedgerOrder } from '../services/plotListOrder';
 
 interface PlotSearchQuery {
   page?: number;
@@ -17,6 +23,7 @@ interface PlotSearchQuery {
   cemeteryType?: string;
   paymentStatus?: 'unpaid' | 'partial_paid' | 'paid' | 'overdue' | 'refunded';
   contractStatus?: 'active' | 'terminated';
+  occupancy?: 'in_use' | 'vacant' | 'all';
   sortBy?:
     | 'plotNumber'
     | 'customerName'
@@ -29,6 +36,7 @@ interface PlotSearchQuery {
   graveKind?: number;
   graveKubun?: number;
   graveType?: number;
+  period?: '第1期' | '第2期' | '第3期' | '第3期樹林部' | '第4期' | 'その他';
 }
 
 /**
@@ -96,26 +104,34 @@ export const getPlots = async (req: Request, res: Response, next: NextFunction) 
       cemeteryType,
       paymentStatus,
       contractStatus,
+      occupancy,
       sortBy,
       sortOrder = 'asc',
       nameKanaPrefix,
       graveKind,
       graveKubun,
       graveType,
+      period,
     } = req.query as unknown as PlotSearchQuery;
+
+    const sectionPeriodMap = await loadSectionPeriodMap(prisma);
 
     // ページネーション計算
     const skip = (page - 1) * limit;
     const take = limit;
 
     // 検索条件の構築
-    // 台帳問い合わせ（/plots）には契約のない空き区画（contract_status='vacant'）を表示しない。
-    // 空き区画は区画残数管理（/plot-availability, inventory系）にのみ表示する（#167）。
-    // active / terminated は過去・現在の契約がある区画のため従来どおり一覧へ含める。
+    // 既定は利用中（vacant 以外）。occupancy で空きだけ／全部を切り替える。
+    // active / terminated はどちらも契約履歴があるため「利用中」に含める（#167）。
+    const occupancyFilter = occupancy ?? 'in_use';
     const whereCondition: Prisma.ContractPlotWhereInput = {
       deleted_at: null,
-      contract_status: { not: 'vacant' },
     };
+    if (occupancyFilter === 'vacant') {
+      whereCondition.contract_status = 'vacant';
+    } else if (occupancyFilter === 'in_use') {
+      whereCondition.contract_status = { not: 'vacant' };
+    }
 
     // フリーテキスト検索（区画番号、顧客名、顧客名カナ、電話番号、住所）
     if (search) {
@@ -167,12 +183,28 @@ export const getPlots = async (req: Request, res: Response, next: NextFunction) 
       };
     }
 
-    // 墓地タイプフィルター
-    if (cemeteryType) {
-      whereCondition.physicalPlot = {
+    // エリア（完全一致）と期（区画名マスタ経由）。両方あるときはその交わり。
+    if (cemeteryType || period) {
+      const physicalPlot = {
         ...((whereCondition.physicalPlot as object) || {}),
-        area_name: { contains: cemeteryType, mode: 'insensitive' },
-      };
+      } as Prisma.PhysicalPlotWhereInput;
+      if (period) {
+        const periodFilter = areaNamesForPeriod(period, sectionPeriodMap);
+        const areaInPeriod = (name: string) =>
+          periodFilter.kind === 'include'
+            ? periodFilter.names.includes(name)
+            : !periodFilter.names.includes(name);
+        if (cemeteryType) {
+          physicalPlot.area_name = areaInPeriod(cemeteryType) ? cemeteryType : '\u0000';
+        } else if (periodFilter.kind === 'include') {
+          physicalPlot.area_name = { in: periodFilter.names };
+        } else {
+          physicalPlot.area_name = { notIn: periodFilter.names };
+        }
+      } else if (cemeteryType) {
+        physicalPlot.area_name = cemeteryType;
+      }
+      whereCondition.physicalPlot = physicalPlot;
     }
 
     // 入金ステータスフィルター
@@ -181,8 +213,8 @@ export const getPlots = async (req: Request, res: Response, next: NextFunction) 
     }
 
     // 契約ステータスフィルター（#200）
-    // スキーマで active / terminated に限定済みのため、既定の vacant 除外と矛盾しない
-    if (contractStatus) {
+    // 空きだけ表示中は上書きしない。全部／利用中のときだけ active / terminated を重ねる。
+    if (contractStatus && occupancyFilter !== 'vacant') {
       whereCondition.contract_status = contractStatus;
     }
 
@@ -231,12 +263,11 @@ export const getPlots = async (req: Request, res: Response, next: NextFunction) 
       | Prisma.ContractPlotOrderByWithRelationInput[];
     switch (sortBy) {
       case 'plotNumber':
-        // 区画番号ソートは画面に表示している display_number（#158）を基準にする。
-        // 移行 plot_number は `legacy-{grave_cd}` 文字列で表示順と乖離するため、
-        // display_number 優先 → plot_number フォールバック → id の複合 orderBy にする。
-        // display_number 未設定（本番 6255 件中 1 件のみ）は nulls:'last' で末尾固定し、
-        // 同値時の安定性のため id を最終キーに付与してページ跨ぎ順序を固定する（#388）。
+        // 紙の台帳と同じく「エリア → 区画番号」でまとめる。
+        // display_number だけだと、6区の1番と11区の1番が隣同士になり、場所が追えない。
+        // display_number 優先 → plot_number フォールバック → id でページ跨ぎを固定（#388）。
         orderByCondition = [
+          { physicalPlot: { area_name: sortOrder } },
           { physicalPlot: { display_number: { sort: sortOrder, nulls: 'last' } } },
           { physicalPlot: { plot_number: sortOrder } },
           { id: 'asc' },
@@ -315,7 +346,51 @@ export const getPlots = async (req: Request, res: Response, next: NextFunction) 
     let total: number;
     let contractPlots: Prisma.ContractPlotGetPayload<{ include: typeof listInclude }>[];
 
-    if (sortBy === 'customerName') {
+    if (sortBy === 'plotNumber') {
+      // 期は区画名マスタから導出するため、DB の area_name 順だと「1」（第2期）が
+      // 「A」（第1期）より先に出る。開いた画面は第1期から並ぶよう、軽いキーだけ
+      // 取って期順に並べてからページ分を取り直す。
+      const sortRows = await prisma.contractPlot.findMany({
+        where: whereCondition,
+        select: {
+          id: true,
+          physicalPlot: {
+            select: { area_name: true, display_number: true, plot_number: true },
+          },
+        },
+      });
+      sortRows.sort((a, b) =>
+        compareLedgerOrder(
+          {
+            id: a.id,
+            areaName: a.physicalPlot.area_name,
+            displayNumber: a.physicalPlot.display_number,
+            plotNumber: a.physicalPlot.plot_number,
+          },
+          {
+            id: b.id,
+            areaName: b.physicalPlot.area_name,
+            displayNumber: b.physicalPlot.display_number,
+            plotNumber: b.physicalPlot.plot_number,
+          },
+          sectionPeriodMap,
+          sortOrder === 'desc' ? 'desc' : 'asc'
+        )
+      );
+      total = sortRows.length;
+      const pageIds = sortRows.slice(skip, skip + take).map((row) => row.id);
+      const pageRows = pageIds.length
+        ? await prisma.contractPlot.findMany({
+            where: { id: { in: pageIds } },
+            include: listInclude,
+          })
+        : [];
+      const byId = new Map(pageRows.map((row) => [row.id, row]));
+      contractPlots = pageIds.flatMap((id) => {
+        const row = byId.get(id);
+        return row ? [row] : [];
+      });
+    } else if (sortBy === 'customerName') {
       // 契約者名ソート（#216 → #282）
       // 旧実装は whereCondition 一致の全件 id + 契約者カナをロードしアプリ側で
       // 五十音ソートしており、数千区画ではページ送りの度にデータセット全体を
@@ -387,6 +462,7 @@ export const getPlots = async (req: Request, res: Response, next: NextFunction) 
         plotNumber: contractPlot.physicalPlot.plot_number,
         displayNumber: contractPlot.physicalPlot.display_number,
         areaName: contractPlot.physicalPlot.area_name,
+        period: resolvePeriod(contractPlot.physicalPlot.area_name, sectionPeriodMap),
         physicalPlotAreaSqm: contractPlot.physicalPlot.area_sqm.toNumber(),
         physicalPlotStatus: contractPlot.physicalPlot.status,
 
@@ -394,6 +470,7 @@ export const getPlots = async (req: Request, res: Response, next: NextFunction) 
         contractDate: contractPlot.contract_date,
         price: contractPlot.price, // Int型なのでそのまま
         paymentStatus: contractPlot.payment_status,
+        contractStatus: contractPlot.contract_status,
 
         // 顧客情報（主契約者のみ - 後方互換性）
         customerName: primaryCustomer?.name || null,
@@ -429,6 +506,8 @@ export const getPlots = async (req: Request, res: Response, next: NextFunction) 
         // 料金情報
         nextBillingDate,
         managementFee: contractPlot.managementFee?.management_fee || null,
+        managementFeeBillingType: contractPlot.managementFee?.billing_type ?? null,
+        managementFeeBillingYears: contractPlot.managementFee?.billing_years ?? null,
         uncollectedAmount: contractPlot.uncollected_amount,
 
         // 請求状況サマリ（B10: 年度別請求 status の集約列）
