@@ -146,3 +146,14 @@ export const inventoryMonthlyReportQuerySchema = z.object({
     .default('true')
     .describe('レイアウト外の区画を「その他」ブロックとして含めるか'),
 });
+
+/** 空き区画一覧（Excel「空き区画一覧」と同じ項目: 番号と㎡） */
+export const inventoryVacantLedgerQuerySchema = z.object({});
+
+/**
+ * 販売数（Excel「今年度販売区画数」「年別販売区画数」）。
+ * agent を渡すとその文字を含む取扱だけ数える。空なら全取扱。
+ */
+export const inventorySalesLedgerQuerySchema = z.object({
+  agent: z.string().trim().max(100).optional(),
+});

@@ -22,6 +22,8 @@ import {
   getContractorPlots,
   getPlotMap,
   getInventoryMonthlyReport,
+  getInventoryVacantLedger,
+  getInventorySalesLedger,
   getPlotHistory,
 } from './controllers';
 import { authenticate } from '../middleware/auth';
@@ -48,6 +50,8 @@ import {
   inventorySectionsQuerySchema,
   inventoryAreasQuerySchema,
   inventoryMonthlyReportQuerySchema,
+  inventoryVacantLedgerQuerySchema,
+  inventorySalesLedgerQuerySchema,
 } from '../validations/inventoryValidation';
 import { plotMapQuerySchema } from '../validations/plotMapValidation';
 
@@ -117,6 +121,24 @@ router.get(
   requirePermission(['viewer', 'operator', 'manager', 'admin']),
   validate({ query: inventoryMonthlyReportQuerySchema }),
   withLogging('Plots', 'getInventoryMonthlyReport', getInventoryMonthlyReport)
+);
+
+// 空き区画一覧（Excel「空き区画一覧」: 番号と㎡）
+router.get(
+  '/inventory/vacant-ledger',
+  authenticate,
+  requirePermission(['viewer', 'operator', 'manager', 'admin']),
+  validate({ query: inventoryVacantLedgerQuerySchema }),
+  withLogging('Plots', 'getInventoryVacantLedger', getInventoryVacantLedger)
+);
+
+// 販売数（Excel「今年度販売区画数」「年別販売区画数」）
+router.get(
+  '/inventory/sales-ledger',
+  authenticate,
+  requirePermission(['viewer', 'operator', 'manager', 'admin']),
+  validate({ query: inventorySalesLedgerQuerySchema }),
+  withLogging('Plots', 'getInventorySalesLedger', getInventorySalesLedger)
 );
 
 // 区画図用オーバーレイ（区ごとの配置に契約・予約を重ねる）
