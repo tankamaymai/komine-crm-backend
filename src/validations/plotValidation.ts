@@ -45,6 +45,7 @@ export const plotSearchQuerySchema = paginationSchema.extend({
   contractStatus: z.enum(['active', 'terminated']).optional(),
   // 台帳の利用中／空き／全部（既定は in_use = vacant 以外）
   occupancy: z.enum(['in_use', 'vacant', 'all']).optional(),
+  period: z.enum(['第1期', '第2期', '第3期', '第3期樹林部', '第4期', 'その他']).optional(),
   sortBy: z
     .enum([
       'plotNumber',
