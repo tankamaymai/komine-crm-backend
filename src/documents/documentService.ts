@@ -230,6 +230,8 @@ export async function generatePdfFromHtml(
   html: string,
   options: {
     format?: 'A4' | 'Letter' | 'postcard';
+    width?: string;
+    height?: string;
     landscape?: boolean;
     margin?: {
       top?: string;
@@ -262,7 +264,12 @@ export async function generatePdfFromHtml(
 
     // PDF生成オプション
     const pdfOptions: Parameters<typeof page.pdf>[0] = {
-      format: options.format === 'postcard' ? undefined : options.format || 'A4',
+      format:
+        options.width && options.height
+          ? undefined
+          : options.format === 'postcard'
+            ? undefined
+            : options.format || 'A4',
       landscape: options.landscape || false,
       margin: options.margin || {
         top: '20mm',
@@ -272,6 +279,10 @@ export async function generatePdfFromHtml(
       },
       printBackground: true,
     };
+    if (options.width && options.height) {
+      pdfOptions.width = options.width;
+      pdfOptions.height = options.height;
+    }
 
     // はがきサイズの場合はカスタムサイズを設定
     if (options.format === 'postcard') {
@@ -380,6 +391,18 @@ export async function generateBulkInvoicePdf(
   }
 }
 
+const PAPER_DIMENSIONS: Record<string, { width: string; height: string }> = {
+  a4: { width: '210mm', height: '297mm' },
+  b5: { width: '182mm', height: '257mm' },
+  a5: { width: '148mm', height: '210mm' },
+  b4: { width: '257mm', height: '364mm' },
+};
+
+function paperDimensions(paperSize: string | undefined) {
+  if (!paperSize) return null;
+  return PAPER_DIMENSIONS[paperSize] ?? null;
+}
+
 /**
  * テンプレートからPDFを生成
  */
@@ -409,9 +432,13 @@ export async function generatePdfFromTemplate(
     }
 
     const html = loadAndRenderTemplate(templateType, data as unknown as Record<string, unknown>);
+    const paper = paperDimensions((data as { paperSize?: string }).paperSize);
 
     const pdfOptions = {
-      format: templateType === 'postcard' ? ('postcard' as const) : ('A4' as const),
+      format:
+        templateType === 'postcard' ? ('postcard' as const) : paper ? undefined : ('A4' as const),
+      width: paper?.width,
+      height: paper?.height,
       landscape: options?.landscape || false,
       margin:
         templateType === 'postcard'
