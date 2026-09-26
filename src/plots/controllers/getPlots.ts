@@ -8,6 +8,12 @@
 import { Request, Response, NextFunction } from 'express';
 import { Prisma } from '@prisma/client';
 import prisma from '../../db/prisma';
+import {
+  areaNamesForPeriod,
+  loadSectionPeriodMap,
+  resolvePeriod,
+} from '../services/inventoryService';
+import { compareLedgerOrder } from '../services/plotListOrder';
 
 interface PlotSearchQuery {
   page?: number;
@@ -30,6 +36,7 @@ interface PlotSearchQuery {
   graveKind?: number;
   graveKubun?: number;
   graveType?: number;
+  period?: '第1期' | '第2期' | '第3期' | '第3期樹林部' | '第4期' | 'その他';
 }
 
 /**
@@ -104,7 +111,10 @@ export const getPlots = async (req: Request, res: Response, next: NextFunction) 
       graveKind,
       graveKubun,
       graveType,
+      period,
     } = req.query as unknown as PlotSearchQuery;
+
+    const sectionPeriodMap = await loadSectionPeriodMap(prisma);
 
     // ページネーション計算
     const skip = (page - 1) * limit;
@@ -173,12 +183,28 @@ export const getPlots = async (req: Request, res: Response, next: NextFunction) 
       };
     }
 
-    // 墓地タイプフィルター（台帳のエリア選択。選択肢は実データの area_name なので完全一致）
-    if (cemeteryType) {
-      whereCondition.physicalPlot = {
+    // エリア（完全一致）と期（区画名マスタ経由）。両方あるときはその交わり。
+    if (cemeteryType || period) {
+      const physicalPlot = {
         ...((whereCondition.physicalPlot as object) || {}),
-        area_name: cemeteryType,
-      };
+      } as Prisma.PhysicalPlotWhereInput;
+      if (period) {
+        const periodFilter = areaNamesForPeriod(period, sectionPeriodMap);
+        const areaInPeriod = (name: string) =>
+          periodFilter.kind === 'include'
+            ? periodFilter.names.includes(name)
+            : !periodFilter.names.includes(name);
+        if (cemeteryType) {
+          physicalPlot.area_name = areaInPeriod(cemeteryType) ? cemeteryType : '\u0000';
+        } else if (periodFilter.kind === 'include') {
+          physicalPlot.area_name = { in: periodFilter.names };
+        } else {
+          physicalPlot.area_name = { notIn: periodFilter.names };
+        }
+      } else if (cemeteryType) {
+        physicalPlot.area_name = cemeteryType;
+      }
+      whereCondition.physicalPlot = physicalPlot;
     }
 
     // 入金ステータスフィルター
@@ -320,7 +346,51 @@ export const getPlots = async (req: Request, res: Response, next: NextFunction) 
     let total: number;
     let contractPlots: Prisma.ContractPlotGetPayload<{ include: typeof listInclude }>[];
 
-    if (sortBy === 'customerName') {
+    if (sortBy === 'plotNumber') {
+      // 期は区画名マスタから導出するため、DB の area_name 順だと「1」（第2期）が
+      // 「A」（第1期）より先に出る。開いた画面は第1期から並ぶよう、軽いキーだけ
+      // 取って期順に並べてからページ分を取り直す。
+      const sortRows = await prisma.contractPlot.findMany({
+        where: whereCondition,
+        select: {
+          id: true,
+          physicalPlot: {
+            select: { area_name: true, display_number: true, plot_number: true },
+          },
+        },
+      });
+      sortRows.sort((a, b) =>
+        compareLedgerOrder(
+          {
+            id: a.id,
+            areaName: a.physicalPlot.area_name,
+            displayNumber: a.physicalPlot.display_number,
+            plotNumber: a.physicalPlot.plot_number,
+          },
+          {
+            id: b.id,
+            areaName: b.physicalPlot.area_name,
+            displayNumber: b.physicalPlot.display_number,
+            plotNumber: b.physicalPlot.plot_number,
+          },
+          sectionPeriodMap,
+          sortOrder === 'desc' ? 'desc' : 'asc'
+        )
+      );
+      total = sortRows.length;
+      const pageIds = sortRows.slice(skip, skip + take).map((row) => row.id);
+      const pageRows = pageIds.length
+        ? await prisma.contractPlot.findMany({
+            where: { id: { in: pageIds } },
+            include: listInclude,
+          })
+        : [];
+      const byId = new Map(pageRows.map((row) => [row.id, row]));
+      contractPlots = pageIds.flatMap((id) => {
+        const row = byId.get(id);
+        return row ? [row] : [];
+      });
+    } else if (sortBy === 'customerName') {
       // 契約者名ソート（#216 → #282）
       // 旧実装は whereCondition 一致の全件 id + 契約者カナをロードしアプリ側で
       // 五十音ソートしており、数千区画ではページ送りの度にデータセット全体を
@@ -392,6 +462,7 @@ export const getPlots = async (req: Request, res: Response, next: NextFunction) 
         plotNumber: contractPlot.physicalPlot.plot_number,
         displayNumber: contractPlot.physicalPlot.display_number,
         areaName: contractPlot.physicalPlot.area_name,
+        period: resolvePeriod(contractPlot.physicalPlot.area_name, sectionPeriodMap),
         physicalPlotAreaSqm: contractPlot.physicalPlot.area_sqm.toNumber(),
         physicalPlotStatus: contractPlot.physicalPlot.status,
 

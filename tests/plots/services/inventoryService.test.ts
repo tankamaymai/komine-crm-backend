@@ -6,6 +6,7 @@ import {
   categorizeSection,
   determinePlotType,
   resolvePeriod,
+  areaNamesForPeriod,
   loadSectionPeriodMap,
   getOverallSummary,
   getPeriodSummaries,
@@ -118,6 +119,34 @@ describe('inventoryService', () => {
     it('マスタにも期名にも無い区画は「その他」に解決すること', () => {
       expect(resolvePeriod('1-99999999', map)).toBe('その他');
       expect(resolvePeriod('unknown', map)).toBe('その他');
+    });
+  });
+
+  describe('areaNamesForPeriod', () => {
+    const map = new Map<string, string>([
+      ['A', '第1期'],
+      ['吉相', '第1期'],
+      ['10', '第3期'],
+      ['樹林', '第3期樹林部'],
+    ]);
+
+    it('指定した期の区画名と、期名そのものを返すこと', () => {
+      const result = areaNamesForPeriod('第1期', map);
+      expect(result.kind).toBe('include');
+      if (result.kind === 'include') {
+        expect(result.names.sort()).toEqual(['A', '吉相', '第1期'].sort());
+      }
+    });
+
+    it('その他はマスタと期名に無い区画だけを残す除外リストになること', () => {
+      const result = areaNamesForPeriod('その他', map);
+      expect(result.kind).toBe('exclude');
+      if (result.kind === 'exclude') {
+        expect(result.names).toEqual(
+          expect.arrayContaining(['A', '吉相', '10', '樹林', '第1期', '第4期'])
+        );
+        expect(result.names).not.toContain('unknown');
+      }
     });
   });
 

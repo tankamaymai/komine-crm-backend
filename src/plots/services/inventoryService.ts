@@ -61,6 +61,26 @@ export function resolvePeriod(areaName: string, sectionPeriodMap: Map<string, st
   return sectionPeriodMap.get(areaName) ?? UNCLASSIFIED_PERIOD;
 }
 
+/** 台帳の期フィルタ。include はその期の区画名、exclude は「その他」（マスタ外）。 */
+export type PeriodAreaFilter =
+  | { kind: 'include'; names: string[] }
+  | { kind: 'exclude'; names: string[] };
+
+export function areaNamesForPeriod(
+  period: string,
+  sectionPeriodMap: Map<string, string>
+): PeriodAreaFilter {
+  if (period === UNCLASSIFIED_PERIOD) {
+    const names = new Set<string>([...PERIODS, ...sectionPeriodMap.keys()]);
+    return { kind: 'exclude', names: [...names] };
+  }
+  const names = new Set<string>([period]);
+  for (const [name, mapped] of sectionPeriodMap) {
+    if (mapped === period) names.add(name);
+  }
+  return { kind: 'include', names: [...names] };
+}
+
 /**
  * セクション（区画名）を特殊区画カテゴリに分類する。
  *
