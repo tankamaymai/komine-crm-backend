@@ -469,6 +469,53 @@ describe('Plot Controller (ContractPlot Model)', () => {
       expect(body.data.data.map((item: { id: string }) => item.id)).toEqual(['first', 'second']);
     });
 
+    it('取扱と基地は旧台帳の番号を名前にして返す', async () => {
+      const row = {
+        id: 'cp-legacy',
+        contract_area_sqm: new Prisma.Decimal(3.6),
+        location_description: null,
+        contract_date: null,
+        price: null,
+        payment_status: 'paid',
+        contract_status: 'active',
+        notes: '碑文の控え',
+        agent_name: null,
+        grave_kind: 1,
+        grave_type: 7,
+        permit_number: '1476',
+        uncollected_amount: 0,
+        created_at: new Date('2024-01-01'),
+        updated_at: new Date('2024-01-01'),
+        physicalPlot: {
+          plot_number: 'legacy-1',
+          display_number: 'A-56',
+          area_name: 'A',
+          area_sqm: new Prisma.Decimal(3.6),
+          status: 'sold_out',
+        },
+        saleContractRoles: [],
+        buriedPersons: [],
+        managementFee: {
+          management_fee: '29800',
+          billing_type: 'PRESENT',
+          billing_years: '10',
+          last_billing_month: null,
+        },
+        billings: [],
+      };
+      mockPrisma.contractPlot.findMany.mockResolvedValue([row]);
+      mockPrisma.contractPlot.count.mockResolvedValue(1);
+      mockRequest.query = { page: 1, limit: 10 } as any;
+
+      await getPlots(mockRequest as Request, mockResponse as Response, mockNext);
+
+      const item = responseJson.mock.calls[0][0].data.data[0];
+      expect(item.agentName).toBe('小嶺');
+      expect(item.baseName).toBe('規格-千羽鶴');
+      expect(item.managementFeeBillingYears).toBe('10');
+      expect(item.contractNotes).toBe('碑文の控え');
+    });
+
     it('sortBy=plotNumber 降順でも表示用番号が空の行は比較関数で末尾に残る', async () => {
       mockPrisma.sectionNameMaster.findMany.mockResolvedValue([{ name: 'A', period: '第1期' }]);
       const row = (id: string, displayNumber: string | null) => ({

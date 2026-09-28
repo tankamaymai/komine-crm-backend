@@ -8,6 +8,7 @@ import { History } from '@prisma/client';
 import prisma from '../../db/prisma';
 import { NotFoundError } from '../../middleware/errorHandler';
 import { formatHistoryWithLabels } from '../services/historyLabels';
+import { resolveBaseName, resolveHandlerName } from '../legacyGraveLabels';
 
 /**
  * 契約区画詳細取得（ContractPlot中心）
@@ -120,7 +121,8 @@ export const getPlotById = async (
       acceptanceNumber: contractPlot.acceptance_number,
       acceptanceDate: contractPlot.acceptance_date,
       staffInCharge: contractPlot.staff_in_charge,
-      agentName: contractPlot.agent_name,
+      agentName: resolveHandlerName(contractPlot.agent_name, contractPlot.grave_kind),
+      baseName: resolveBaseName(contractPlot.grave_type),
       permitDate: contractPlot.permit_date,
       permitNumber: contractPlot.permit_number,
       startDate: contractPlot.start_date,
