@@ -14,6 +14,7 @@ import {
   resolvePeriod,
 } from '../services/inventoryService';
 import { compareLedgerOrder } from '../services/plotListOrder';
+import { resolveBaseName, resolveHandlerName } from '../legacyGraveLabels';
 
 interface PlotSearchQuery {
   page?: number;
@@ -497,8 +498,10 @@ export const getPlots = async (req: Request, res: Response, next: NextFunction) 
         buriedPersonNames:
           contractPlot.buriedPersons?.map((bp: { name: string }) => bp.name).filter(Boolean) || [],
 
-        // 取扱（販売代理店）
-        agentName: contractPlot.agent_name || null,
+        // 取扱（手入力が空なら、旧台帳の墓石取扱番号を名前にする）
+        agentName: resolveHandlerName(contractPlot.agent_name, contractPlot.grave_kind),
+        // 基地（旧台帳の基地タイプ番号を名前にする。例: 規格-千羽鶴 / J3）
+        baseName: resolveBaseName(contractPlot.grave_type),
 
         // 許可番号
         permitNumber: contractPlot.permit_number || null,
