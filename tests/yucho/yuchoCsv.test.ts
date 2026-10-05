@@ -1,5 +1,8 @@
 import {
-  buildDataRow,
+  buildDebitCsv,
+  buildDebitRow,
+  buildPayerMasterCsv,
+  buildPayerMasterRow,
   buildYuchoCsv,
   isExportableBillingItem,
   __internal,
@@ -94,181 +97,96 @@ describe('yuchoCsv internals', () => {
   });
 });
 
-describe('buildDataRow', () => {
-  it('starts with empty column (comma-led row)', () => {
-    const row = buildDataRow(baseItem());
-    expect(row.startsWith(',')).toBe(true);
-  });
-
-  it('produces exactly 12 comma-separated columns', () => {
-    const row = buildDataRow(baseItem());
-    // 口座名義列にカンマは含まれない想定 (半角カナ+空白) なので単純に split で良い
-    expect(row.split(',')).toHaveLength(12);
-  });
-
-  it('uses fixed bank values (9900 / ﾕｳﾁﾖ padded to 15 / ゆうちょ銀行)', () => {
-    const cells = buildDataRow(baseItem()).split(',');
+describe('buildPayerMasterRow（公式名簿CSV）', () => {
+  it('produces exactly 12 columns and starts with empty 委託者コード', () => {
+    const cells = buildPayerMasterRow(baseItem()).split(',');
+    expect(cells).toHaveLength(12);
+    expect(cells[0]).toBe('');
     expect(cells[1]).toBe('9900');
-    expect(cells[2]).toBe('ﾕｳﾁﾖ           '); // 15桁
-    expect(cells[2]).toHaveLength(15);
-    expect(cells[3]).toBe('ゆうちょ銀行');
-  });
-
-  it('emits 3-digit branch code derived from branch name', () => {
-    const cells = buildDataRow(baseItem()).split(',');
-    expect(cells[4]).toBe('018'); // 〇一八 → 018
-  });
-
-  it('ゆうちょ記号があれば店番は記号の中央3桁を優先する (#170)', () => {
-    const item = baseItem({
-      billingInfo: { ...baseItem().billingInfo!, branchName: '〇一八', yuchoSymbol: '11280' },
-    });
-    const cells = buildDataRow(item).split(',');
-    expect(cells[4]).toBe('128'); // 記号 11280 → 店番 128（支店名推定 018 を上書き）
-  });
-
-  it('ゆうちょ番号があれば口座番号に番号を優先する (#170)', () => {
-    const item = baseItem({
-      billingInfo: { ...baseItem().billingInfo!, accountNumber: '1234567', yuchoNumber: '89' },
-    });
-    const cells = buildDataRow(item).split(',');
-    expect(cells[8]).toBe('0000089'); // 番号 89 → 0000089（口座番号 1234567 を上書き）
-  });
-
-  it('8桁ゆうちょ番号（末尾チェックデジット1）は先頭桁欠落させず正しい7桁を出力する (#392)', () => {
-    const item = baseItem({
-      // 印字8桁 '12345671'。旧実装は padLeftZero(slice(-7)) で '2345671'（先頭欠落＋CD混入）
-      billingInfo: { ...baseItem().billingInfo!, accountNumber: null, yuchoNumber: '12345671' },
-    });
-    const cells = buildDataRow(item).split(',');
-    expect(cells[8]).toBe('1234567'); // 末尾CD除去で正しい7桁
-  });
-
-  it('uses fixed deposit type code 1 (ordinary) by default', () => {
-    const cells = buildDataRow(baseItem()).split(',');
+    expect(cells[2]).toBe('');
+    expect(cells[3]).toBe('');
     expect(cells[7]).toBe('1');
   });
 
-  it('zero-pads account number to 7 digits', () => {
+  it('does not put amount in column 11 — that is the kanji name', () => {
+    const cells = buildPayerMasterRow(baseItem()).split(',');
+    expect(cells[10]).toBe('山田太郎');
+    expect(cells[10]).not.toBe('12000');
+  });
+
+  it('puts 20-digit payer code in column 12, not flag 1', () => {
+    const cells = buildPayerMasterRow(baseItem()).split(',');
+    expect(cells[11]).toMatch(/^\d{20}$/);
+    expect(cells[11]).not.toBe('1');
+  });
+
+  it('ゆうちょ記号があれば店番は記号の中央3桁を優先する', () => {
     const item = baseItem({
-      billingInfo: { ...baseItem().billingInfo!, accountNumber: '12345' },
+      billingInfo: { ...baseItem().billingInfo!, branchName: '〇一八', yuchoSymbol: '11280' },
     });
-    const cells = buildDataRow(item).split(',');
-    expect(cells[8]).toBe('0012345');
+    expect(buildPayerMasterRow(item).split(',')[4]).toBe('128');
   });
 
-  it('wraps account holder in double quotes and pads to 30 half-width chars', () => {
-    const cells = buildDataRow(baseItem()).split(',');
-    const holder = cells[9]!;
-    expect(holder.startsWith('"')).toBe(true);
-    expect(holder.endsWith('"')).toBe(true);
-    const inner = holder.slice(1, -1);
-    expect(inner).toHaveLength(30);
-    expect(inner.startsWith('ﾔﾏﾀﾞﾀﾛｳ')).toBe(true);
-    expect(inner.trimEnd()).toBe('ﾔﾏﾀﾞﾀﾛｳ');
-  });
-
-  it('falls back to customerNameKana when accountHolder is missing', () => {
+  it('8桁ゆうちょ番号（末尾1）は7桁で出す', () => {
     const item = baseItem({
-      billingInfo: { ...baseItem().billingInfo!, accountHolder: null },
-      customerNameKana: 'サトウハナコ',
+      billingInfo: { ...baseItem().billingInfo!, accountNumber: null, yuchoNumber: '12345671' },
     });
-    const cells = buildDataRow(item).split(',');
-    const inner = cells[9]!.slice(1, -1);
-    expect(inner).toHaveLength(30);
-    expect(inner.trimEnd()).toBe('ｻﾄｳﾊﾅｺ');
+    expect(buildPayerMasterRow(item).split(',')[8]).toBe('1234567');
   });
 
-  it('outputs billing amount as bare integer (no zero-padding) in column 11', () => {
-    const cells = buildDataRow(baseItem({ billingAmount: 12000 })).split(',');
-    expect(cells[10]).toBe('12000');
-  });
-
-  it('uses fixed flag value 1 in column 12', () => {
-    const cells = buildDataRow(baseItem()).split(',');
-    expect(cells[11]).toBe('1');
-  });
-
-  it('does NOT leak internal contractPlotId anywhere in the row', () => {
-    const item = baseItem({ contractPlotId: 'cuid-secret-DEADBEEF' });
-    const row = buildDataRow(item);
-    expect(row.includes('cuid-secret-DEADBEEF')).toBe(false);
-    expect(row.includes('DEADBEEF')).toBe(false);
-  });
-
-  it('keeps columns 1, 6, 7 empty (matches reference file shape)', () => {
-    const cells = buildDataRow(baseItem()).split(',');
-    expect(cells[0]).toBe('');
-    expect(cells[5]).toBe('');
-    expect(cells[6]).toBe('');
-  });
-
-  it('produces a row matching the reference file shape', () => {
-    const item = baseItem({
-      customerNameKana: 'セイ メイ',
-      billingInfo: {
-        bankName: 'ゆうちょ銀行',
-        branchName: '〇七四', // → 074
-        accountType: 'ordinary',
-        accountNumber: '1234567',
-        accountHolder: 'セイ メイ',
-      },
-      billingAmount: 8000,
-    });
-    const cells = buildDataRow(item).split(',');
-    expect(cells[0]).toBe(''); //                 1: empty
-    expect(cells[1]).toBe('9900'); //              2: bank code
-    expect(cells[2]).toBe('ﾕｳﾁﾖ           '); //   3: bank kana (15)
-    expect(cells[3]).toBe('ゆうちょ銀行'); //        4: bank kanji
-    expect(cells[4]).toBe('074'); //               5: branch (〇七四 → 074)
-    expect(cells[5]).toBe(''); //                  6: empty
-    expect(cells[6]).toBe(''); //                  7: empty
-    expect(cells[7]).toBe('1'); //                 8: deposit type
-    expect(cells[8]).toBe('1234567'); //           9: account number
-    expect(cells[9]!.slice(1, -1).trimEnd()).toBe('ｾｲ ﾒｲ'); // 10: holder
-    expect(cells[10]).toBe('8000'); //            11: amount
-    expect(cells[11]).toBe('1'); //               12: flag
+  it('kana is half-width and not space-padded', () => {
+    expect(buildPayerMasterRow(baseItem()).split(',')[9]).toBe('ﾔﾏﾀﾞﾀﾛｳ');
   });
 });
 
-describe('buildYuchoCsv', () => {
-  it('terminates each row with CRLF', () => {
-    const csv = buildYuchoCsv({ items: [baseItem()] });
+describe('buildDebitRow（公式決済CSV）', () => {
+  it('produces 4 columns: code1, code2, kana, amount', () => {
+    const cells = buildDebitRow(baseItem()).split(',');
+    expect(cells).toHaveLength(4);
+    expect(cells[0]).toMatch(/^\d{10}$/);
+    expect(cells[1]).toMatch(/^\d{10}$/);
+    expect(cells[2]).toBe('ﾔﾏﾀﾞﾀﾛｳ');
+    expect(cells[3]).toBe('12000');
+  });
+
+  it('does not place amount in an 11th column', () => {
+    expect(buildDebitRow(baseItem()).split(',')).toHaveLength(4);
+  });
+});
+
+describe('buildDebitCsv / buildPayerMasterCsv', () => {
+  it('debit CSV has no header and CRLF rows', () => {
+    const csv = buildDebitCsv({ items: [baseItem()] });
     expect(csv.endsWith('\r\n')).toBe(true);
-    const segments = csv.split('\r\n');
-    // 1 data row + trailing empty from final CRLF
-    expect(segments).toHaveLength(2);
-    expect(segments[1]).toBe('');
-  });
-
-  it('emits one data row per exportable item — no header/trailer/end rows', () => {
-    const items = [baseItem(), baseItem({ sourceId: 'fee-2', billingAmount: 8000 })];
-    const csv = buildYuchoCsv({ items });
     const lines = csv.split('\r\n').filter((l) => l.length > 0);
-    expect(lines.length).toBe(2);
-    // Both lines must start with empty column (comma-led)
-    for (const line of lines) {
-      expect(line.startsWith(',')).toBe(true);
-    }
+    expect(lines).toHaveLength(1);
+    expect(lines[0]!.split(',')).toHaveLength(4);
   });
 
-  it('skips items with no billingInfo', () => {
-    const items = [baseItem(), baseItem({ sourceId: 'fee-2', billingInfo: null })];
-    const csv = buildYuchoCsv({ items });
-    const rows = csv.split('\r\n').filter((l) => l.length > 0);
-    expect(rows.length).toBe(1);
+  it('master CSV starts with the official header', () => {
+    const csv = buildPayerMasterCsv({ items: [baseItem()] });
+    const lines = csv.split('\r\n').filter((l) => l.length > 0);
+    expect(lines[0]).toContain('委託者コード');
+    expect(lines[0]).toContain('支払人コード');
+    expect(lines).toHaveLength(2);
   });
 
-  it('skips items with zero amount', () => {
-    const items = [baseItem(), baseItem({ sourceId: 'fee-2', billingAmount: 0 })];
-    const csv = buildYuchoCsv({ items });
-    const rows = csv.split('\r\n').filter((l) => l.length > 0);
-    expect(rows.length).toBe(1);
+  it('skips items with no billingInfo or zero amount', () => {
+    const items = [
+      baseItem(),
+      baseItem({ sourceId: 'fee-2', billingInfo: null }),
+      baseItem({ sourceId: 'fee-3', billingAmount: 0 }),
+    ];
+    expect(
+      buildDebitCsv({ items })
+        .split('\r\n')
+        .filter((l) => l.length > 0)
+    ).toHaveLength(1);
   });
 
   it('returns empty string when no exportable items', () => {
     expect(buildYuchoCsv({ items: [] })).toBe('');
-    expect(buildYuchoCsv({ items: [baseItem({ billingInfo: null })] })).toBe('');
+    expect(buildPayerMasterCsv({ items: [baseItem({ billingInfo: null })] })).toBe('');
   });
 });
 
@@ -343,92 +261,9 @@ describe('isExportableBillingItem', () => {
   });
 });
 
-describe('口座名義の二重引用符エスケープ（#273）', () => {
-  /** RFC4180 準拠の最小 CSV 行パーサ（囲みフィールド内の "" と , を解釈） */
-  const splitRfc4180 = (line: string): string[] => {
-    const out: string[] = [];
-    let cur = '';
-    let inQuotes = false;
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i];
-      if (inQuotes) {
-        if (ch === '"') {
-          if (line[i + 1] === '"') {
-            cur += '"';
-            i++;
-          } else {
-            inQuotes = false;
-          }
-        } else {
-          cur += ch;
-        }
-      } else if (ch === '"') {
-        inQuotes = true;
-      } else if (ch === ',') {
-        out.push(cur);
-        cur = '';
-      } else {
-        cur += ch;
-      }
-    }
-    out.push(cur);
-    return out;
-  };
-
-  it('名義に半角 " が含まれても囲みフィールドが破損しない（RFC4180 "" 二重化）', () => {
-    const item = baseItem({
-      billingInfo: { ...baseItem().billingInfo!, accountHolder: 'ヤマ"ダ"タロウ' },
-    });
-    const row = buildDataRow(item);
-    // 列10 は "..." 囲みのまま、内部の " は "" に二重化される
-    expect(row).toContain('"ﾔﾏ""ﾀﾞ""ﾀﾛｳ');
-    // RFC4180 パーサで読んだとき列数が 12 のままで、名義が正しく復元されること
-    const fields = splitRfc4180(row);
-    expect(fields.length).toBe(12);
-    expect(fields[9]).toContain('ﾔﾏ"ﾀﾞ"ﾀﾛｳ');
-    // 後続フィールド（引落金額・フラグ）が列ズレしていないこと
-    expect(fields[10]).toBe('12000');
-  });
-
-  it('名義に " が無い場合は従来どおり', () => {
-    const cells = buildDataRow(baseItem()).split(',');
-    expect(cells[9]?.startsWith('"')).toBe(true);
-    expect(cells[9]?.includes('""')).toBe(false);
-  });
-
-  describe('30桁切詰め境界でのエスケープ破損（#300）', () => {
-    it('30桁目に " がある名義でも "" ペアが切詰めで割れず列ズレしない', () => {
-      // 29文字 + " で論理値がちょうど30桁。エスケープ→切詰めの順だと
-      // "" の2文字目が30桁境界で切られ、単独の " が残って囲みが不均衡になる
-      const item = baseItem({
-        billingInfo: {
-          ...baseItem().billingInfo!,
-          accountHolder: 'ア'.repeat(29) + '"' + 'イウ',
-        },
-      });
-      const row = buildDataRow(item);
-      const fields = splitRfc4180(row);
-      // 12列のまま列ズレしないこと（旧実装では10〜11列に化ける）
-      expect(fields.length).toBe(12);
-      // 論理値は30桁に切詰められ、" は復元される
-      expect(fields[9]).toBe('ｱ'.repeat(29) + '"');
-      // 後続フィールド（引落金額・フラグ）が無事なこと
-      expect(fields[10]).toBe('12000');
-      expect(fields[11]).toBe('1');
-    });
-
-    it('切詰めで " が幅外に落ちる場合はエスケープ対象自体が消える', () => {
-      const item = baseItem({
-        billingInfo: {
-          ...baseItem().billingInfo!,
-          accountHolder: 'ア'.repeat(30) + '"タロウ',
-        },
-      });
-      const row = buildDataRow(item);
-      const fields = splitRfc4180(row);
-      expect(fields.length).toBe(12);
-      expect(fields[9]).toBe('ｱ'.repeat(30));
-      expect(fields[10]).toBe('12000');
-    });
+describe('normalizeOfficialKana', () => {
+  it('converts long vowel to hyphen and small kana to large', () => {
+    expect(__internal.normalizeOfficialKana('タロー')).toBe('ﾀﾛ-');
+    expect(__internal.normalizeOfficialKana('ｧｲｳ')).toBe('ｱｲｳ');
   });
 });

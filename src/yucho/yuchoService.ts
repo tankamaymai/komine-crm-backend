@@ -1,15 +1,17 @@
 /**
  * ゆうちょ連携: 請求データ集約サービス
  *
- * ContractPlot.ManagementFee と CollectiveBurial を集約し、
- * ゆうちょ自動払込み用の請求対象データを返す。
+ * 管理料だけを集め、ゆうちょ自動払込み用の請求対象データを返す。
+ * 合祀に料金はないため、合祀の金額は引き落としに混ぜない。
  */
 
-import { PaymentStatus } from '@prisma/client';
+import { BillingCategory } from '@prisma/client';
 import prisma from '../db/prisma';
 import { getRequestLogger } from '../utils/logger';
 import type { YuchoBillingItem, YuchoBillingResponse } from '../validations/yuchoValidation';
-import { isExportableBillingItem } from './yuchoCsv';
+import { getAccountKana, getExcludeReason, isExportableBillingItem } from './yuchoCsv';
+import { derivePayerCode, splitPayerCode } from './yuchoPayerCode';
+import { getYuchoExportSettings } from './yuchoSettings';
 
 interface FetchParams {
   year: number;
@@ -27,6 +29,40 @@ const parseBillingMonth = (value: string | null | undefined): number | null => {
   if (!m) return null;
   const num = parseInt(m[1] ?? '0', 10);
   return num >= 1 && num <= 12 ? num : null;
+};
+
+/** 毎年=1 / 五年=5 / 十年=10。未設定は毎年。0や永代は対象外。 */
+export const parseFeeCycleYears = (value: string | null | undefined): number | null => {
+  if (value == null || String(value).trim() === '') return 1;
+  const num = parseInt(String(value).replace(/[^\d]/g, ''), 10);
+  if (num === 1 || num === 5 || num === 10) return num;
+  return null;
+};
+
+/** 最終請求月から年だけ取る。"202103" や "2021年3月" を許容。 */
+export const parseLastBillingYear = (value: string | null | undefined): number | null => {
+  if (!value) return null;
+  const trimmed = String(value).trim();
+  const matched = trimmed.match(/(\d{4})[年\-./]?(\d{1,2})/);
+  if (!matched) return null;
+  const year = parseInt(matched[1] ?? '', 10);
+  return year >= 1900 && year <= 2100 ? year : null;
+};
+
+/**
+ * 選んだ年に、この管理料の番が来ているか。
+ * 次回 = 前回の年 + 1/5/10。前回が読めない毎年払いは出す。5年・10年は前回が無いと出さない。
+ */
+export const isManagementFeeDueThisYear = (
+  year: number,
+  billingYearsRaw: string | null | undefined,
+  lastBillingMonthRaw: string | null | undefined
+): boolean => {
+  const cycle = parseFeeCycleYears(billingYearsRaw);
+  if (cycle == null) return false;
+  const lastYear = parseLastBillingYear(lastBillingMonthRaw);
+  if (lastYear == null) return cycle === 1;
+  return lastYear + cycle <= year;
 };
 
 /**
@@ -114,33 +150,39 @@ const buildBillingInfo = (payer: PayerCustomer | null): YuchoBillingItem['billin
   };
 };
 
+type YearCoverageBilling = {
+  contract_plot_id: string;
+  use_start_year: number | null;
+  use_end_year: number | null;
+  amount: number;
+  paid_amount: number;
+};
+
+const coversYear = (billing: YearCoverageBilling, year: number): boolean => {
+  if (billing.use_start_year == null) return false;
+  const endYear = billing.use_end_year ?? billing.use_start_year;
+  return billing.use_start_year <= year && endYear >= year;
+};
+
+const isYearFullyPaid = (billing: YearCoverageBilling): boolean =>
+  billing.amount > 0 && billing.paid_amount >= billing.amount;
+
 /**
  * 管理料の請求対象を取得
+ *
+ * 区画全体の支払済（去年までの入金）では外さない。
+ * 選んだ年の管理料がまだ完納でなければ出す。請求書が未作成でも出す。
  */
 const fetchManagementBillingItems = async (params: FetchParams): Promise<YuchoBillingItem[]> => {
   const { year, month, status } = params;
 
-  // 管理料は契約区画ベース。billing_month が指定月と一致するものを抽出。
-  // status フィルタは ContractPlot.payment_status をベースに判定。
-  const paymentStatusFilter: PaymentStatus | { in: PaymentStatus[] } | undefined =
-    status === 'unbilled'
-      ? { in: [PaymentStatus.unpaid, PaymentStatus.partial_paid, PaymentStatus.overdue] }
-      : status === 'paid'
-        ? PaymentStatus.paid
-        : status === 'billed'
-          ? { in: [PaymentStatus.unpaid, PaymentStatus.partial_paid] }
-          : undefined;
-
-  const contractPlotWhere = {
-    deleted_at: null,
-    contract_status: 'active' as const,
-    ...(paymentStatusFilter ? { payment_status: paymentStatusFilter } : {}),
-  };
-
   const fees = await prisma.managementFee.findMany({
     where: {
       deleted_at: null,
-      contractPlot: contractPlotWhere,
+      contractPlot: {
+        deleted_at: null,
+        contract_status: 'active',
+      },
     },
     include: {
       contractPlot: {
@@ -157,6 +199,32 @@ const fetchManagementBillingItems = async (params: FetchParams): Promise<YuchoBi
     },
   });
 
+  const plotIds = [...new Set(fees.map((fee) => fee.contract_plot_id))];
+  const yearBillings =
+    plotIds.length === 0
+      ? []
+      : await prisma.billing.findMany({
+          where: {
+            deleted_at: null,
+            terminated: false,
+            category: BillingCategory.management_fee,
+            contract_plot_id: { in: plotIds },
+          },
+          select: {
+            contract_plot_id: true,
+            use_start_year: true,
+            use_end_year: true,
+            amount: true,
+            paid_amount: true,
+          },
+        });
+
+  const paidThisYear = new Set(
+    yearBillings
+      .filter((billing) => coversYear(billing, year) && isYearFullyPaid(billing))
+      .map((billing) => billing.contract_plot_id)
+  );
+
   const items: YuchoBillingItem[] = [];
   for (const fee of fees) {
     const billingMonth = parseBillingMonth(fee.billing_month);
@@ -164,6 +232,14 @@ const fetchManagementBillingItems = async (params: FetchParams): Promise<YuchoBi
     if (month != null && billingMonth !== month) continue;
     // 月指定なし(年単位)の場合は billing_month が設定されているもののみ
     if (month == null && billingMonth == null) continue;
+    if (!isManagementFeeDueThisYear(year, fee.billing_years, fee.last_billing_month)) continue;
+
+    const thisYearPaid = paidThisYear.has(fee.contract_plot_id);
+    if (status === 'unbilled' || status === 'billed') {
+      if (thisYearPaid) continue;
+    } else if (status === 'paid') {
+      if (!thisYearPaid) continue;
+    }
 
     const amount = parseManagementFeeAmount(fee.management_fee, fee.id);
     if (amount <= 0) continue;
@@ -188,7 +264,7 @@ const fetchManagementBillingItems = async (params: FetchParams): Promise<YuchoBi
       customerName: payer?.name ?? null,
       customerNameKana: payer?.name_kana ?? null,
       billingAmount: amount,
-      billingStatus: fee.contractPlot.payment_status,
+      billingStatus: thisYearPaid ? 'paid' : 'pending',
       scheduledDate,
       billingMonth,
       billingInfo: buildBillingInfo(payer),
@@ -199,90 +275,29 @@ const fetchManagementBillingItems = async (params: FetchParams): Promise<YuchoBi
 };
 
 /**
- * 合祀料金の請求対象を取得
- */
-const fetchCollectiveBillingItems = async (params: FetchParams): Promise<YuchoBillingItem[]> => {
-  const { year, month, status } = params;
-
-  const billingStatusFilter =
-    status === 'unbilled'
-      ? 'pending'
-      : status === 'billed'
-        ? 'billed'
-        : status === 'paid'
-          ? 'paid'
-          : undefined;
-
-  const startDate =
-    month != null ? new Date(Date.UTC(year, month - 1, 1)) : new Date(Date.UTC(year, 0, 1));
-  const endDate =
-    month != null ? new Date(Date.UTC(year, month, 1)) : new Date(Date.UTC(year + 1, 0, 1));
-
-  const burials = await prisma.collectiveBurial.findMany({
-    where: {
-      deleted_at: null,
-      billing_scheduled_date: { gte: startDate, lt: endDate },
-      ...(billingStatusFilter ? { billing_status: billingStatusFilter } : {}),
-      contractPlot: { deleted_at: null },
-    },
-    include: {
-      contractPlot: {
-        include: {
-          physicalPlot: true,
-          saleContractRoles: {
-            where: { deleted_at: null },
-            include: {
-              customer: true,
-            },
-          },
-        },
-      },
-    },
-  });
-
-  return burials
-    .filter((b) => (b.billing_amount ?? 0) > 0)
-    .map((b) => {
-      const payer = pickPayer(b.contractPlot.saleContractRoles);
-      const scheduledDate = b.billing_scheduled_date?.toISOString().split('T')[0] ?? null;
-      const billingMonth = b.billing_scheduled_date
-        ? b.billing_scheduled_date.getUTCMonth() + 1
-        : null;
-
-      return {
-        category: 'collective' as const,
-        sourceId: b.id,
-        contractPlotId: b.contract_plot_id,
-        plotNumber: b.contractPlot.physicalPlot.plot_number,
-        displayNumber: b.contractPlot.physicalPlot.display_number,
-        areaName: b.contractPlot.physicalPlot.area_name,
-        contractDate: b.contractPlot.contract_date?.toISOString().split('T')[0] ?? '',
-        customerId: payer?.id ?? null,
-        customerName: payer?.name ?? null,
-        customerNameKana: payer?.name_kana ?? null,
-        billingAmount: b.billing_amount ?? 0,
-        billingStatus: b.billing_status,
-        scheduledDate,
-        billingMonth,
-        billingInfo: buildBillingInfo(payer),
-      };
-    });
-};
-
-/**
  * 請求対象を取得して整形・サマリ計算する。
+ * 合祀は料金を取らないので、category が collective のときは空で返す。
  */
 export const fetchYuchoBillingData = async (params: FetchParams): Promise<YuchoBillingResponse> => {
   const promises: Array<Promise<YuchoBillingItem[]>> = [];
   if (params.category === 'management' || params.category === 'all') {
     promises.push(fetchManagementBillingItems(params));
   }
-  if (params.category === 'collective' || params.category === 'all') {
-    promises.push(fetchCollectiveBillingItems(params));
-  }
 
   const results = await Promise.all(promises);
-  const items = results.flat();
+  const items = results.flat().map((item) => {
+    const payerCode = derivePayerCode(item.customerId, item.contractPlotId);
+    const split = splitPayerCode(payerCode);
+    return {
+      ...item,
+      payerCode,
+      payerCode1: split?.payerCode1 ?? null,
+      payerCode2: split?.payerCode2 ?? null,
+      accountKana: getAccountKana(item) || null,
+      exportable: isExportableBillingItem(item),
+      excludeReason: getExcludeReason(item),
+    };
+  });
 
   // 区画番号順でソート
   items.sort((a, b) => a.plotNumber.localeCompare(b.plotNumber));
@@ -320,5 +335,6 @@ export const fetchYuchoBillingData = async (params: FetchParams): Promise<YuchoB
     period: { year: params.year, month: params.month ?? null },
     items,
     summary,
+    exportSettings: getYuchoExportSettings(),
   };
 };

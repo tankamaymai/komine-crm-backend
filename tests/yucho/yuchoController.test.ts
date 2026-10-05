@@ -19,6 +19,7 @@ declare global {
 const mockPrisma = {
   managementFee: { findMany: jest.fn() },
   collectiveBurial: { findMany: jest.fn() },
+  billing: { findMany: jest.fn() },
 };
 
 jest.mock('../../src/db/prisma', () => ({
@@ -86,10 +87,11 @@ describe('yuchoController', () => {
     jest.clearAllMocks();
     res = buildResponse();
     next = jest.fn();
+    mockPrisma.billing.findMany.mockResolvedValue([]);
   });
 
   describe('getYuchoBilling', () => {
-    it('returns aggregated management + collective items with summary', async () => {
+    it('returns management fees only and does not bill collective burials', async () => {
       mockPrisma.managementFee.findMany.mockResolvedValue([
         {
           id: 'fee-1',
@@ -97,19 +99,6 @@ describe('yuchoController', () => {
           billing_month: '4',
           management_fee: '12000',
           contractPlot: buildContractPlot(),
-        },
-      ]);
-      mockPrisma.collectiveBurial.findMany.mockResolvedValue([
-        {
-          id: 'cb-1',
-          contract_plot_id: 'cp-2',
-          billing_amount: 50000,
-          billing_status: 'pending',
-          billing_scheduled_date: new Date('2026-04-15'),
-          contractPlot: buildContractPlot({
-            id: 'cp-2',
-            physicalPlot: { id: 'pp-2', plot_number: 'B-2', area_name: '第2期' },
-          }),
         },
       ]);
 
@@ -120,14 +109,15 @@ describe('yuchoController', () => {
       const payload = (res.json as jest.Mock).mock.calls[0][0];
       expect(payload.success).toBe(true);
       expect(payload.data.period).toEqual({ year: 2026, month: 4 });
-      expect(payload.data.items).toHaveLength(2);
-      expect(payload.data.summary.totalCount).toBe(2);
-      expect(payload.data.summary.totalAmount).toBe(62000);
+      expect(payload.data.items).toHaveLength(1);
+      expect(payload.data.items[0].category).toBe('management');
+      expect(payload.data.summary.totalCount).toBe(1);
+      expect(payload.data.summary.totalAmount).toBe(12000);
       expect(payload.data.summary.byCategory.management.amount).toBe(12000);
-      expect(payload.data.summary.byCategory.collective.amount).toBe(50000);
-      // 両件とも口座登録あり → 全件 exportable・除外0（#172）
-      expect(payload.data.summary.exportableCount).toBe(2);
-      expect(payload.data.summary.exportableAmount).toBe(62000);
+      expect(payload.data.summary.byCategory.collective.amount).toBe(0);
+      expect(mockPrisma.collectiveBurial.findMany).not.toHaveBeenCalled();
+      expect(payload.data.summary.exportableCount).toBe(1);
+      expect(payload.data.summary.exportableAmount).toBe(12000);
       expect(payload.data.summary.excludedNoAccountCount).toBe(0);
     });
 
@@ -321,14 +311,15 @@ describe('yuchoController', () => {
       expect(byId('f3').billingAmount).toBe(12000);
     });
 
-    it('honours category=collective by skipping management fee query', async () => {
-      mockPrisma.collectiveBurial.findMany.mockResolvedValue([]);
-
+    it('returns no items for category=collective because collective burial has no fee', async () => {
       const req = buildRequest({ year: '2026', category: 'collective' });
       await getYuchoBilling(req as Request, res as Response, next);
 
       expect(mockPrisma.managementFee.findMany).not.toHaveBeenCalled();
-      expect(mockPrisma.collectiveBurial.findMany).toHaveBeenCalled();
+      expect(mockPrisma.collectiveBurial.findMany).not.toHaveBeenCalled();
+      const payload = (res.json as jest.Mock).mock.calls[0][0];
+      expect(payload.data.items).toHaveLength(0);
+      expect(payload.data.summary.totalAmount).toBe(0);
     });
 
     it('returns 400-style ValidationError for invalid year', async () => {
@@ -433,9 +424,11 @@ describe('yuchoController', () => {
     const validQuery = {
       year: '2026',
       month: '4',
+      kind: 'debit',
+      transferDay: '15',
     };
 
-    it('returns Shift-JIS CSV buffer with attachment disposition and 12-column data rows', async () => {
+    it('returns Shift-JIS debit CSV with 4 official columns', async () => {
       mockPrisma.managementFee.findMany.mockResolvedValue([
         {
           id: 'f1',
@@ -453,29 +446,20 @@ describe('yuchoController', () => {
       expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'text/csv; charset=Shift_JIS');
       expect(res.setHeader).toHaveBeenCalledWith(
         'Content-Disposition',
-        expect.stringContaining('yucho_202604.csv')
+        expect.stringContaining('yucho-debit-2026-all-')
       );
       expect(res.status).toHaveBeenCalledWith(200);
       const sent = (res.send as jest.Mock).mock.calls[0][0] as Buffer;
       expect(Buffer.isBuffer(sent)).toBe(true);
-      // decode the Shift-JIS buffer back to verify structure
       const iconv = (await import('iconv-lite')).default;
       const decoded = iconv.decode(sent, 'Shift_JIS');
       const lines = decoded.split('\r\n').filter((l) => l.length > 0);
-      expect(lines.length).toBe(1); // single billable item → one data row
-      const row = lines[0]!;
-      // 12 columns, starts with empty (comma-led)
-      expect(row.split(',')).toHaveLength(12);
-      expect(row.startsWith(',')).toBe(true);
-      // no header/trailer/end markers (no row starts with 1/8/9)
-      expect(lines.some((l) => l.startsWith('1,'))).toBe(false);
-      expect(lines.some((l) => l.startsWith('8,'))).toBe(false);
-      expect(lines.some((l) => l.startsWith('9,'))).toBe(false);
-      // internal contractPlotId (cp-1) must NOT appear in output
+      expect(lines.length).toBe(1);
+      expect(lines[0]!.split(',')).toHaveLength(4);
       expect(decoded.includes('cp-1')).toBe(false);
     });
 
-    it('encodes Japanese kanji bank name in Shift-JIS (not UTF-8 / not 文字化け)', async () => {
+    it('encodes Japanese kanji name in Shift-JIS for payer master', async () => {
       mockPrisma.managementFee.findMany.mockResolvedValue([
         {
           id: 'f1',
@@ -487,29 +471,28 @@ describe('yuchoController', () => {
       ]);
       mockPrisma.collectiveBurial.findMany.mockResolvedValue([]);
 
-      const req = buildRequest(validQuery);
+      const req = buildRequest({
+        year: '2026',
+        month: '4',
+        kind: 'payer_master',
+      });
       await exportYuchoCsv(req as Request, res as Response, next);
 
       const sent = (res.send as jest.Mock).mock.calls[0][0] as Buffer;
-      // Decoding as UTF-8 should be 文字化け (not contain ゆうちょ銀行)
-      expect(sent.toString('utf-8').includes('ゆうちょ銀行')).toBe(false);
-      // Decoding as Shift-JIS should restore the kanji intact
       const iconv = (await import('iconv-lite')).default;
-      expect(iconv.decode(sent, 'Shift_JIS').includes('ゆうちょ銀行')).toBe(true);
+      expect(iconv.decode(sent, 'Shift_JIS').includes('山田太郎')).toBe(true);
     });
 
-    it('uses "all" suffix in filename when month is omitted', async () => {
+    it('uses official debit filename', async () => {
       mockPrisma.managementFee.findMany.mockResolvedValue([]);
       mockPrisma.collectiveBurial.findMany.mockResolvedValue([]);
 
-      const { month: _m, ...rest } = validQuery;
-      void _m;
-      const req = buildRequest(rest);
+      const req = buildRequest(validQuery);
       await exportYuchoCsv(req as Request, res as Response, next);
 
       expect(res.setHeader).toHaveBeenCalledWith(
         'Content-Disposition',
-        expect.stringContaining('yucho_2026all.csv')
+        expect.stringContaining('yucho-debit-2026-all-')
       );
     });
 
@@ -524,6 +507,55 @@ describe('yuchoController', () => {
       const sent = (res.send as jest.Mock).mock.calls[0][0] as Buffer;
       expect(Buffer.isBuffer(sent)).toBe(true);
       expect(sent.length).toBe(0);
+    });
+
+    it('accepts any existing day as the debit transfer day', async () => {
+      mockPrisma.managementFee.findMany.mockResolvedValue([]);
+
+      const req = buildRequest({ ...validQuery, transferDay: '17' });
+      await exportYuchoCsv(req as Request, res as Response, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(200);
+    });
+
+    it('rejects a day that does not exist in the month', async () => {
+      const req = buildRequest({ year: '2026', month: '2', kind: 'debit', transferDay: '30' });
+      await exportYuchoCsv(req as Request, res as Response, next);
+
+      expect(next).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'ValidationError', message: '2月30日はありません' })
+      );
+      expect(mockPrisma.managementFee.findMany).not.toHaveBeenCalled();
+    });
+
+    it('rejects a 120-character file on a day the bank is closed', async () => {
+      // 2026-05-16 は土曜
+      const req = buildRequest({
+        year: '2026',
+        month: '5',
+        kind: 'zengin',
+        transferMonth: '5',
+        transferDay: '16',
+      });
+      await exportYuchoCsv(req as Request, res as Response, next);
+
+      expect(next).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'ValidationError',
+          message: '5月16日はゆうちょが休み（土日）なので引き落とせません',
+        })
+      );
+    });
+
+    it('does not block the debit CSV on a closed day because the date is not in the file', async () => {
+      mockPrisma.managementFee.findMany.mockResolvedValue([]);
+
+      const req = buildRequest({ year: '2026', month: '5', kind: 'debit', transferDay: '16' });
+      await exportYuchoCsv(req as Request, res as Response, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(200);
     });
   });
 });

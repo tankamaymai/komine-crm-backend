@@ -2,7 +2,7 @@
  * ゆうちょ連携コントローラー
  *
  * - GET /api/v1/yucho/billing : 請求対象データの一覧取得
- * - GET /api/v1/yucho/export  : ゆうちょ自動払込み用 CSV (Shift-JIS, 12列) を生成・返却
+ * - GET /api/v1/yucho/export  : 公式ファイル（名簿CSV / 決済CSV / 全銀120文字）を返却
  */
 
 import { Request, Response, NextFunction } from 'express';
@@ -11,19 +11,26 @@ import { ZodError } from 'zod';
 import { ValidationError } from '../middleware/errorHandler';
 import { yuchoBillingQuerySchema, yuchoExportQuerySchema } from '../validations/yuchoValidation';
 import { fetchYuchoBillingData } from './yuchoService';
-import { buildYuchoCsv } from './yuchoCsv';
+import { buildDebitCsv, buildPayerMasterCsv } from './yuchoCsv';
+import { getYuchoBusinessSettings } from './yuchoSettings';
+import { buildZenginFile } from './yuchoZengin';
 
-const formatZodError = (err: ZodError): ValidationError => {
+const formatZodError = (err: ZodError, message = 'バリデーションエラー'): ValidationError => {
   const details = err.issues.map((i) => ({
     field: i.path.join('.'),
     message: i.message,
   }));
-  return new ValidationError('バリデーションエラー', details);
+  return new ValidationError(message, details);
 };
 
-/**
- * GET /api/v1/yucho/billing
- */
+const todayStamp = (): string => {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}${m}${d}`;
+};
+
 export const getYuchoBilling = async (
   req: Request,
   res: Response,
@@ -43,9 +50,6 @@ export const getYuchoBilling = async (
   }
 };
 
-/**
- * GET /api/v1/yucho/export
- */
 export const exportYuchoCsv = async (
   req: Request,
   res: Response,
@@ -54,7 +58,7 @@ export const exportYuchoCsv = async (
   try {
     const parsed = yuchoExportQuerySchema.safeParse(req.query);
     if (!parsed.success) {
-      throw formatZodError(parsed.error);
+      throw formatZodError(parsed.error, parsed.error.issues[0]?.message);
     }
     const params = parsed.data;
 
@@ -65,11 +69,37 @@ export const exportYuchoCsv = async (
       status: params.status,
     });
 
-    const csv = buildYuchoCsv({ items: data.items });
-    const buffer = iconv.encode(csv, 'Shift_JIS');
+    const stamp = todayStamp();
+    const category = params.category;
+    let body = '';
+    let fileName = '';
+    let contentType = 'text/csv; charset=Shift_JIS';
 
-    const fileName = `yucho_${params.year}${params.month != null ? String(params.month).padStart(2, '0') : 'all'}.csv`;
-    res.setHeader('Content-Type', 'text/csv; charset=Shift_JIS');
+    if (params.kind === 'payer_master') {
+      body = buildPayerMasterCsv({ items: data.items });
+      fileName = `yucho-payer-master-${params.year}-${category}-${stamp}.csv`;
+    } else if (params.kind === 'zengin') {
+      const settings = getYuchoBusinessSettings();
+      if (!settings) {
+        throw new ValidationError('会社の番号が未入力', [
+          { field: 'clientCode', message: '委託者コードなどの会社設定が未入力です' },
+        ]);
+      }
+      body = buildZenginFile({
+        items: data.items,
+        settings,
+        transferMonth: params.transferMonth ?? 1,
+        transferDay: params.transferDay ?? 15,
+      });
+      fileName = `yucho-zengin-${params.year}-${category}-${stamp}.txt`;
+      contentType = 'text/plain; charset=Shift_JIS';
+    } else {
+      body = buildDebitCsv({ items: data.items });
+      fileName = `yucho-debit-${params.year}-${category}-${stamp}.csv`;
+    }
+
+    const buffer = iconv.encode(body, 'Shift_JIS');
+    res.setHeader('Content-Type', contentType);
     res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
     res.status(200).send(buffer);
   } catch (error) {
