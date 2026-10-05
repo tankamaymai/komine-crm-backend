@@ -125,3 +125,12 @@ export const createPrepaidBillingSchema = z.object({
 });
 
 export type CreatePrepaidBillingInput = z.infer<typeof createPrepaidBillingSchema>;
+
+/** 選んだ年・月の管理料請求をまとめて作る。apply=false は件数だけ返す。 */
+export const generateManagementFeeBillingSchema = z.object({
+  year: z.number().int().min(1900).max(2999),
+  month: z.number().int().min(1).max(12),
+  apply: z.boolean(),
+});
+
+export type GenerateManagementFeeBillingInput = z.infer<typeof generateManagementFeeBillingSchema>;
