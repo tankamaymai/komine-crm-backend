@@ -135,6 +135,19 @@ export async function generateManagementFeeBillings(
     needsReviewPlotIds: [],
   };
 
+  const pending: Array<{
+    contract_plot_id: string;
+    customer_id: string;
+    category: typeof BillingCategory.management_fee;
+    amount: number;
+    use_start_year: number;
+    use_end_year: number;
+    billing_years: number;
+    target_month: number;
+    billing_date: Date;
+    status: 'billed';
+  }> = [];
+
   const contracts = await prisma.contractPlot.findMany({
     where: {
       deleted_at: null,
@@ -207,31 +220,39 @@ export async function generateManagementFeeBillings(
       continue;
     }
 
-    const billingDate = new Date(Date.UTC(targetYear, billingMonth - 1, 1));
-
-    if (apply) {
-      await prisma.$transaction(async (tx) => {
-        await tx.billing.create({
-          data: {
-            contract_plot_id: c.id,
-            customer_id: target.customer_id,
-            category: BillingCategory.management_fee,
-            amount,
-            use_start_year: targetYear,
-            use_end_year: targetYear,
-            billing_years: 1,
-            target_month: billingMonth,
-            billing_date: billingDate,
-            status: 'billed',
-          },
-        });
-        // 請求が増えたので派生 payment_status を再計算（#162）
-        await recalculateContractPlotPaymentStatus(tx, c.id);
-      });
-    }
+    pending.push({
+      contract_plot_id: c.id,
+      customer_id: target.customer_id,
+      category: BillingCategory.management_fee,
+      amount,
+      use_start_year: targetYear,
+      use_end_year: targetYear,
+      billing_years: 1,
+      target_month: billingMonth,
+      billing_date: new Date(Date.UTC(targetYear, billingMonth - 1, 1)),
+      status: 'billed',
+    });
 
     result.created++;
     result.createdPlotIds.push(c.id);
+  }
+
+  // 1人ずつ保存すると、人数が多い月は画面の待ち時間を超えて切れる。
+  // 200人ずつまとめて保存する。
+  if (apply && pending.length > 0) {
+    const chunkSize = 200;
+    for (let i = 0; i < pending.length; i += chunkSize) {
+      const chunk = pending.slice(i, i + chunkSize);
+      await prisma.$transaction(
+        async (tx) => {
+          await tx.billing.createMany({ data: chunk });
+          for (const row of chunk) {
+            await recalculateContractPlotPaymentStatus(tx, row.contract_plot_id);
+          }
+        },
+        { timeout: 120_000 }
+      );
+    }
   }
 
   return result;
