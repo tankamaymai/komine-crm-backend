@@ -131,6 +131,27 @@ describe('generateManagementFeeBillings (#196)', () => {
     );
   });
 
+  it('指定した請求月の人だけ作る', async () => {
+    const { prisma, billingCreate } = buildPrisma([
+      buildContract({ id: 'oct', managementFee: { management_fee: '4000', billing_month: '10', billing_years: '1' } }),
+      buildContract({ id: 'mar' }),
+    ]);
+    const r = await generateManagementFeeBillings(prisma, {
+      targetYear: 2026,
+      month: 10,
+      apply: true,
+    });
+
+    expect(r.created).toBe(1);
+    expect(r.skippedOtherMonth).toBe(1);
+    expect(billingCreate).toHaveBeenCalledTimes(1);
+    expect(billingCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ contract_plot_id: 'oct', target_month: 10 }),
+      })
+    );
+  });
+
   it('対象年度の管理料Billingが既にあれば冪等スキップ', async () => {
     const { prisma, billingCreate } = buildPrisma([
       buildContract({ billings: [{ use_start_year: 2026, use_end_year: 2026 }] }),

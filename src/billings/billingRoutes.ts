@@ -17,6 +17,7 @@ import {
 } from './prepaidBillingController';
 import { getUnpaidBillings } from './unpaidBillingController';
 import { getUncollectedBillings } from './uncollectedBillingController';
+import { generateManagementFeeBilling } from './managementFeeBillingController';
 
 const router = Router();
 
@@ -53,6 +54,15 @@ router.get(
   authenticate,
   requirePermission([ROLES.VIEWER, ROLES.OPERATOR, ROLES.MANAGER, ROLES.ADMIN]),
   withLogging('Billings', 'getUncollected', getUncollectedBillings)
+);
+
+// 選んだ月の管理料請求をまとめて作る（manager以上。ゆうちょ画面と同じ）
+// ※ '/:id' より先に登録すること
+router.post(
+  '/management-fee/generate',
+  authenticate,
+  requirePermission([ROLES.MANAGER, ROLES.ADMIN]),
+  withLogging('Billings', 'generateManagementFee', generateManagementFeeBilling)
 );
 
 // 前受金プレビュー（operator以上）
