@@ -3437,7 +3437,7 @@
           "Yucho"
         ],
         "summary": "ゆうちょ請求対象データ取得",
-        "description": "指定期間の管理料・合祀料金の請求対象データを集約して返す。\n各レコードには契約区画情報、顧客情報、口座情報、請求金額が含まれる。\n",
+        "description": "指定期間の管理料の請求対象データを集約して返す。合祀は料金がないため含めない。\n各レコードには契約区画情報、顧客情報、口座情報、請求金額が含まれる。\n",
         "security": [
           {
             "bearerAuth": []
@@ -3642,8 +3642,8 @@
         "tags": [
           "Yucho"
         ],
-        "summary": "ゆうちょ自動払込み用CSV出力",
-        "description": "全銀協フォーマット（120バイト固定長レコード）のCSVを生成して返す。\nヘッダー(1) + データ(2) + トレーラー(8) + エンド(9) の構成。\n",
+        "summary": "ゆうちょＢｉｚダイレクト自動払込み用ファイル出力",
+        "description": "管理料の引き落としファイルを Shift-JIS で返す。合祀は料金がないため含めない。\n- payer_master: 支払人情報CSV（名簿・12列・金額なし）\n- debit: 支払人情報追加CSV（決済・4列）\n- zengin: 全銀形式120バイト固定長。ヘッダー(1) + データ(2) + トレーラー(8) + エンド(9)。\n  委託者コードと事業主口座（環境変数 YUCHO_*）が未設定なら 400。\n  払込指定日がゆうちょの休み（土日・祝日・年末年始）なら 400。\n",
         "security": [
           {
             "bearerAuth": []
@@ -3663,8 +3663,11 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "integer"
-            }
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 12
+            },
+            "description": "対象月。請求月が一致する管理料だけ出す"
           },
           {
             "name": "category",
@@ -3678,7 +3681,8 @@
                 "all"
               ],
               "default": "all"
-            }
+            },
+            "description": "collective は常に空（合祀は料金なし）"
           },
           {
             "name": "status",
@@ -3696,75 +3700,53 @@
             }
           },
           {
-            "name": "format",
+            "name": "kind",
             "in": "query",
             "required": false,
             "schema": {
               "type": "string",
               "enum": [
+                "payer_master",
+                "debit",
                 "zengin"
               ],
-              "default": "zengin"
-            }
-          },
-          {
-            "name": "transferDate",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+              "default": "debit"
             },
-            "description": "引落日 (YYYY-MM-DD)"
+            "description": "出すファイルの種類"
           },
           {
-            "name": "clientCode",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "pattern": "^\\d{1,10}$"
-            },
-            "description": "委託者コード（最大10桁）"
-          },
-          {
-            "name": "clientName",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "maxLength": 40
-            },
-            "description": "委託者名（半角40文字以内）"
-          },
-          {
-            "name": "bankCode",
+            "name": "transferDay",
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string",
-              "pattern": "^\\d{4}$",
-              "default": "9900"
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 31
             },
-            "description": "取引銀行コード（4桁、デフォルト 9900 = ゆうちょ）"
+            "description": "引き落とし日。debit と zengin は必須。その月に存在する日であること"
           },
           {
-            "name": "branchCode",
+            "name": "transferMonth",
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string",
-              "pattern": "^\\d{3}$",
-              "default": "000"
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 12
             },
-            "description": "取引支店コード（3桁）"
+            "description": "引き落とし月。zengin は必須（払込指定日 MMDD を組む）"
           }
         ],
         "responses": {
           "200": {
-            "description": "全銀協フォーマット CSV",
+            "description": "Shift-JIS のファイル本体",
             "content": {
               "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "text/plain": {
                 "schema": {
                   "type": "string"
                 }

@@ -1,36 +1,17 @@
 /**
- * ゆうちょ自動払込み CSV ビルダー
- *
- * 利用者提供の実ファイル(2026-05-27 確認) に基づくフォーマット:
- *   - カンマ区切り CSV・12列・Shift-JIS（エンコードは Controller 側で実施）
- *   - ヘッダ/トレーラ/エンドレコードは無し（全行データ）
- *   - 行頭は空列でカンマ始まり
- *
- * 列定義:
- *   1: 空
- *   2: 金融機関コード (9900 固定 = ゆうちょ)
- *   3: 金融機関名 半角カナ (15桁・空白パディング, "ﾕｳﾁﾖ" + 11空白)
- *   4: 金融機関名 漢字 ("ゆうちょ銀行" 固定)
- *   5: 店番 (3桁)
- *   6: 空 (支店名カナ想定・現状は空)
- *   7: 空 (支店名漢字想定・現状は空)
- *   8: 預金種目 (1=普通)
- *   9: 口座番号 (7桁)
- *  10: 口座名義 半角カナ (30桁空白パディング・ダブルクオート囲み)
- *  11: 引落金額
- *  12: フラグ (1 固定)
+ * ゆうちょＢｉｚダイレクト公式 CSV（ブラウザ受付）
+ *  - 名簿: 支払人情報CSV（12列・金額なし）
+ *  - 決済: 支払人情報追加CSV（4列・金額あり）
  */
 
 import type { YuchoBillingItem } from '../validations/yuchoValidation';
 import { branchCodeFromSymbol, accountNumberFromYuchoNumber } from './yuchoAccount';
+import { derivePayerCode, splitPayerCode } from './yuchoPayerCode';
 
 const LINE_SEP = '\r\n';
 const BANK_CODE = '9900';
-const BANK_NAME_KANA = 'ﾕｳﾁﾖ';
-const BANK_NAME_KANA_WIDTH = 15;
-const BANK_NAME_KANJI = 'ゆうちょ銀行';
-const ACCOUNT_HOLDER_WIDTH = 30;
-const FLAG = '1';
+const PAYER_MASTER_HEADER =
+  '委託者コード,金融機関コード,金融機関カナ名,金融機関漢字名,支店コード,支店カナ名,支店漢字名,預金種目,口座番号,支払人カナ名,支払人漢字名,支払人コード';
 
 /**
  * 預金種目コード変換（Prisma enum → ゆうちょ code）
@@ -223,44 +204,78 @@ const extractBranchCode = (branchName: string): string => {
   return digits.length === 3 ? digits : '000';
 };
 
-/**
- * データ行(1顧客=1行) を生成する。
- */
-export const buildDataRow = (item: YuchoBillingItem): string => {
-  const info = item.billingInfo;
-  // 口座名義は唯一の二重引用符囲みフィールド。toHalfWidthKana は ASCII を素通し
-  // するため、名義に半角 " が残ると囲みが途中で閉じて列ズレを起こす。
-  // RFC4180 に従い内部の " を "" に二重化してから囲む（#273）。
-  // 固定幅整形は「論理値を幅に収めてからエスケープ」の順で行うこと（#300）。
-  // エスケープ後に切詰めると "" のペアが30桁境界で割れて単独の " が残り、
-  // 囲みの引用符が不均衡になって #273 が防いだ列ズレが再発する。
-  const accountHolder = padRight(
-    toHalfWidthKana(info?.accountHolder ?? item.customerNameKana ?? ''),
-    ACCOUNT_HOLDER_WIDTH
-  ).replace(/"/g, '""');
+const SMALL_KANA: Record<string, string> = {
+  ｧ: 'ｱ',
+  ｨ: 'ｲ',
+  ｩ: 'ｳ',
+  ｪ: 'ｴ',
+  ｫ: 'ｵ',
+  ｬ: 'ﾔ',
+  ｭ: 'ﾕ',
+  ｮ: 'ﾖ',
+  ｯ: 'ﾂ',
+};
 
-  // 店番・口座番号はゆうちょ記号番号があればそれを正準ソースにする（#170）。
-  // 記号(方式A)から店番3桁を取り、無ければ従来どおり支店名から推定する。
+/** 公式: 小文字カナは大文字、長音はハイフン */
+export const normalizeOfficialKana = (input: string): string =>
+  toHalfWidthKana(input)
+    .replace(/[ｧｨｩｪｫｬｭｮｯ]/g, (ch) => SMALL_KANA[ch] ?? ch)
+    .replace(/[ーｰ]/g, '-');
+
+export const getAccountKana = (item: YuchoBillingItem): string =>
+  normalizeOfficialKana(item.billingInfo?.accountHolder ?? item.customerNameKana ?? '').slice(
+    0,
+    30
+  );
+
+export const resolveBranchAndAccount = (
+  item: YuchoBillingItem
+): { branchCode: string; accountNumber: string } => {
+  const info = item.billingInfo;
   const branchCode =
     branchCodeFromSymbol(info?.yuchoSymbol) ?? extractBranchCode(info?.branchName ?? '');
   const accountNumber =
     accountNumberFromYuchoNumber(info?.yuchoNumber) ?? info?.accountNumber ?? '';
+  return { branchCode, accountNumber };
+};
 
+const csvCell = (value: string): string => {
+  if (!/[,"\r\n]/.test(value)) return value;
+  return `"${value.replace(/"/g, '""')}"`;
+};
+
+/** 名簿用（支払人情報CSV）1行。金額は入れない。 */
+export const buildPayerMasterRow = (item: YuchoBillingItem): string => {
+  const { branchCode, accountNumber } = resolveBranchAndAccount(item);
+  const payerCode = derivePayerCode(item.customerId, item.contractPlotId) ?? '';
   const cells = [
-    '', // 1: 空
-    BANK_CODE, // 2: 金融機関コード
-    padRight(BANK_NAME_KANA, BANK_NAME_KANA_WIDTH), // 3: 金融機関名 半角カナ
-    BANK_NAME_KANJI, // 4: 金融機関名 漢字
-    padLeftZero(branchCode, 3), // 5: 店番
-    '', // 6: 空
-    '', // 7: 空
-    accountTypeCode(info?.accountType), // 8: 預金種目
-    padLeftZero(accountNumber, 7), // 9: 口座番号
-    `"${accountHolder}"`, // 10: 口座名義
-    String(item.billingAmount), // 11: 引落金額
-    FLAG, // 12: フラグ
+    '',
+    BANK_CODE,
+    '',
+    '',
+    padLeftZero(branchCode, 3),
+    '',
+    '',
+    '1',
+    padLeftZero(accountNumber, 7),
+    getAccountKana(item),
+    (item.customerName ?? '').slice(0, 48),
+    payerCode,
   ];
-  return cells.join(',');
+  return cells.map(csvCell).join(',');
+};
+
+/** 決済用（支払人情報追加CSV）1行。 */
+export const buildDebitRow = (item: YuchoBillingItem): string => {
+  const code = derivePayerCode(item.customerId, item.contractPlotId);
+  const split = splitPayerCode(code);
+  const cells = [
+    split?.payerCode1 ?? '',
+    split?.payerCode2 ?? '',
+    getAccountKana(item),
+    String(item.billingAmount),
+  ];
+  return cells.map(csvCell).join(',');
 };
 
 interface BuildCsvParams {
@@ -282,30 +297,55 @@ const hasUsableAccountNumber = (item: YuchoBillingItem): boolean => {
   return digits.length > 0 && Number(digits) > 0;
 };
 
+export type YuchoExcludeReason =
+  | 'no_account'
+  | 'bad_number'
+  | 'no_kana'
+  | 'no_payer_code'
+  | 'zero_amount';
+
+export const getExcludeReason = (item: YuchoBillingItem): YuchoExcludeReason | null => {
+  if (item.billingAmount <= 0) return 'zero_amount';
+  if (!item.billingInfo) return 'no_account';
+  if (!hasUsableAccountNumber(item)) return 'bad_number';
+  if (!getAccountKana(item)) return 'no_kana';
+  if (!derivePayerCode(item.customerId, item.contractPlotId)) return 'no_payer_code';
+  return null;
+};
+
 /**
- * CSV（振替ファイル）のデータ行として出力可能な請求項目かどうか。
- * 口座情報（billingInfo）があり、口座番号が実在しうる値で、かつ請求金額が正であること。
- * 件数表示の整合性のため、この判定を CSV 生成（buildYuchoCsv）と
- * 集計（yuchoService の summary）で共用する。これが実出力件数の唯一の基準となる。
- * 口座番号欠損はここで弾くことで excludedNoAccountCount（請求漏れ検知 #172）に
- * 自動計上される（#266）。
+ * 口座があり金額が正なら一覧の「出力対象」。
+ * 決済CSVはさらにカナと支払人コードが必要。全銀1本はカナがあればよい。
  */
 export const isExportableBillingItem = (item: YuchoBillingItem): boolean =>
   Boolean(item.billingInfo) && hasUsableAccountNumber(item) && item.billingAmount > 0;
 
-/**
- * ゆうちょ自動払込みCSV (12列カンマ区切り) を生成する。
- * 戻り値は文字列。Shift-JIS エンコードは Controller 側で実施。
- */
-export const buildYuchoCsv = ({ items }: BuildCsvParams): string => {
-  const billable = items.filter(isExportableBillingItem);
+export const isCsvExportableItem = (item: YuchoBillingItem): boolean =>
+  isExportableBillingItem(item) &&
+  Boolean(getAccountKana(item)) &&
+  Boolean(derivePayerCode(item.customerId, item.contractPlotId));
+
+export const isZenginExportableItem = (item: YuchoBillingItem): boolean =>
+  isExportableBillingItem(item) && Boolean(getAccountKana(item));
+
+export const buildPayerMasterCsv = ({ items }: BuildCsvParams): string => {
+  const billable = items.filter(isCsvExportableItem);
   if (billable.length === 0) return '';
-  return billable.map(buildDataRow).join(LINE_SEP) + LINE_SEP;
+  return [PAYER_MASTER_HEADER, ...billable.map(buildPayerMasterRow)].join(LINE_SEP) + LINE_SEP;
 };
 
-// テスト用にエクスポート
+export const buildDebitCsv = ({ items }: BuildCsvParams): string => {
+  const billable = items.filter(isCsvExportableItem);
+  if (billable.length === 0) return '';
+  return billable.map(buildDebitRow).join(LINE_SEP) + LINE_SEP;
+};
+
+/** 毎回使う決済CSV。旧名の呼び出し先を公式4列に寄せる。 */
+export const buildYuchoCsv = buildDebitCsv;
+
 export const __internal = {
   toHalfWidthKana,
+  normalizeOfficialKana,
   padRight,
   padLeftZero,
   accountTypeCode,

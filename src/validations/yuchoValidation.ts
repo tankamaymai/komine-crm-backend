@@ -1,9 +1,15 @@
 import { z } from 'zod';
+import {
+  CLOSED_REASON_LABEL,
+  getYuchoClosedReason,
+  isExistingDate,
+} from '../yucho/yuchoBusinessDay';
 
 /**
  * ゆうちょ連携バリデーション
  *
- * 管理料・合祀料金の請求データ取得とCSV生成に関するクエリパラメータを検証する。
+ * 管理料の請求データ取得とCSV生成に関するクエリパラメータを検証する。
+ * 合祀に料金はないため、引き落とし対象には含めない。
  */
 
 // 請求対象カテゴリ
@@ -18,12 +24,12 @@ export type YuchoCategory = z.infer<typeof YuchoCategoryEnum>;
 export const YuchoStatusEnum = z.enum(['unbilled', 'billed', 'paid', 'all']);
 export type YuchoStatus = z.infer<typeof YuchoStatusEnum>;
 
-// CSV形式
-export const YuchoFormatEnum = z.enum(['zengin']);
-export type YuchoFormat = z.infer<typeof YuchoFormatEnum>;
+export const YuchoExportKindEnum = z.enum(['payer_master', 'debit', 'zengin']);
+export type YuchoExportKind = z.infer<typeof YuchoExportKindEnum>;
 
 const yearSchema = z.coerce.number().int().min(1900).max(2999);
 const monthSchema = z.coerce.number().int().min(1).max(12);
+const transferDaySchema = z.coerce.number().int().min(1).max(31);
 
 // 請求データ取得用クエリスキーマ
 export const yuchoBillingQuerySchema = z.object({
@@ -35,16 +41,52 @@ export const yuchoBillingQuerySchema = z.object({
 
 export type YuchoBillingQuery = z.infer<typeof yuchoBillingQuerySchema>;
 
-// CSV エクスポート用クエリスキーマ
-// ゆうちょ自動払込みCSVは委託者ヘッダを持たないため、ヘッダ系パラメータ
-// (transferDate / clientCode / clientName / bankCode / branchCode) は不要。
-export const yuchoExportQuerySchema = z.object({
-  year: yearSchema,
-  month: monthSchema.optional(),
-  category: YuchoCategoryEnum.optional().default('all'),
-  status: YuchoStatusEnum.optional().default('unbilled'),
-  format: YuchoFormatEnum.optional().default('zengin'),
-});
+export const yuchoExportQuerySchema = z
+  .object({
+    year: yearSchema,
+    month: monthSchema.optional(),
+    category: YuchoCategoryEnum.optional().default('all'),
+    status: YuchoStatusEnum.optional().default('unbilled'),
+    kind: YuchoExportKindEnum.optional().default('debit'),
+    transferDay: transferDaySchema.optional(),
+    transferMonth: monthSchema.optional(),
+  })
+  .superRefine((val, ctx) => {
+    if ((val.kind === 'debit' || val.kind === 'zengin') && val.transferDay == null) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['transferDay'],
+        message: '引き落とし日が必要です',
+      });
+    }
+    if (val.kind === 'zengin' && val.transferMonth == null) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['transferMonth'],
+        message: '引き落とし月が必要です',
+      });
+    }
+
+    const transferMonth = val.transferMonth ?? val.month;
+    if (val.transferDay == null || transferMonth == null) return;
+    if (!isExistingDate(val.year, transferMonth, val.transferDay)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['transferDay'],
+        message: `${transferMonth}月${val.transferDay}日はありません`,
+      });
+      return;
+    }
+    // 名簿CSV・決済CSVには日付が入らない（人がゆうちょの画面で選ぶ）ので、1本ファイルだけ止める
+    const closed = getYuchoClosedReason(val.year, transferMonth, val.transferDay);
+    if (val.kind === 'zengin' && closed) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['transferDay'],
+        message: `${transferMonth}月${val.transferDay}日はゆうちょが休み（${CLOSED_REASON_LABEL[closed]}）なので引き落とせません`,
+      });
+    }
+  });
 
 export type YuchoExportQuery = z.infer<typeof yuchoExportQuerySchema>;
 
@@ -77,6 +119,12 @@ export interface YuchoBillingItem {
     yuchoSymbol: string | null;
     yuchoNumber: string | null;
   } | null;
+  payerCode?: string | null;
+  payerCode1?: string | null;
+  payerCode2?: string | null;
+  accountKana?: string | null;
+  exportable?: boolean;
+  excludeReason?: 'no_account' | 'bad_number' | 'no_kana' | 'no_payer_code' | 'zero_amount' | null;
 }
 
 export interface YuchoBillingSummary {
@@ -100,4 +148,8 @@ export interface YuchoBillingResponse {
   period: { year: number; month: number | null };
   items: YuchoBillingItem[];
   summary: YuchoBillingSummary;
+  exportSettings: {
+    zenginReady: boolean;
+    missing: string[];
+  };
 }
