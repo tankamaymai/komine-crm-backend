@@ -16,6 +16,11 @@ import {
   syncBurialCount,
   getStatsByYear,
 } from './collectiveBurialController';
+import {
+  getCollectiveBurialSettings,
+  postReleaseDueCollectiveBurials,
+  updateCollectiveBurialSettings,
+} from './collectiveBurialSettingsController';
 
 const router = Router();
 
@@ -25,6 +30,29 @@ router.get(
   authenticate,
   requirePermission([ROLES.MANAGER, ROLES.ADMIN]),
   withLogging('CollectiveBurials', 'getList', getCollectiveBurialList)
+);
+
+// 一斉解約の月（お盆 / 10月）。/:id より前に置く
+router.get(
+  '/settings',
+  authenticate,
+  requirePermission([ROLES.MANAGER, ROLES.ADMIN]),
+  withLogging('CollectiveBurials', 'getSettings', getCollectiveBurialSettings)
+);
+
+router.put(
+  '/settings',
+  authenticate,
+  requirePermission([ROLES.MANAGER, ROLES.ADMIN]),
+  withLogging('CollectiveBurials', 'updateSettings', updateCollectiveBurialSettings)
+);
+
+// 今年の合祀日を過ぎた人を解約する。今年より前は対象にしない
+router.post(
+  '/release-due',
+  authenticate,
+  requirePermission([ROLES.MANAGER, ROLES.ADMIN]),
+  withLogging('CollectiveBurials', 'releaseDue', postReleaseDueCollectiveBurials)
 );
 
 // 年別統計取得（manager以上）
