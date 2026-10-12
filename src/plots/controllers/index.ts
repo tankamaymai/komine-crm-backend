@@ -26,6 +26,7 @@ export { getInventoryAreas } from './getInventoryAreas';
 export { getVacantPlots } from './getVacantPlots';
 export { getContractorPlots } from './getContractorPlots';
 export { getPlotMap } from './getPlotMap';
+export { putPlotMapPositions } from './putPlotMapPositions';
 export { getInventoryMonthlyReport } from './getInventoryMonthlyReport';
 export { getInventoryVacantLedger, getInventorySalesLedger } from './getInventoryLedger';
 

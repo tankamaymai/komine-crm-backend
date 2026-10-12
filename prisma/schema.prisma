@@ -578,6 +578,23 @@ model CollectiveBurialSetting {
   @@map("collective_burial_settings")
 }
 
+// 区画図で動かしたマスの場所。元の並びはフロントの generated-layouts にある
+model PlotMapCellPosition {
+  id         String   @id @default(uuid())
+  map_id     String   @db.VarChar(50)
+  origin_row Int
+  origin_col Int
+  plot_label String   @db.VarChar(50)
+  row        Int
+  col        Int
+  updated_by Int?
+  updated_at DateTime @default(now()) @updatedAt
+
+  @@unique([map_id, origin_row, origin_col])
+  @@unique([map_id, row, col])
+  @@map("plot_map_cell_positions")
+}
+
 // 更新履歴テーブル
 model History {
   id               String     @id @default(uuid()) @map("history_id")

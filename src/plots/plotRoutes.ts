@@ -21,6 +21,7 @@ import {
   getVacantPlots,
   getContractorPlots,
   getPlotMap,
+  putPlotMapPositions,
   getInventoryMonthlyReport,
   getInventoryVacantLedger,
   getInventorySalesLedger,
@@ -53,7 +54,7 @@ import {
   inventoryVacantLedgerQuerySchema,
   inventorySalesLedgerQuerySchema,
 } from '../validations/inventoryValidation';
-import { plotMapQuerySchema } from '../validations/plotMapValidation';
+import { plotMapQuerySchema, plotMapPositionsBodySchema } from '../validations/plotMapValidation';
 
 const router = Router();
 
@@ -148,6 +149,15 @@ router.get(
   requirePermission(['viewer', 'operator', 'manager', 'admin']),
   validate({ query: plotMapQuerySchema }),
   withLogging('Plots', 'getPlotMap', getPlotMap)
+);
+
+// 区画図で動かしたマスの場所を保存（区画図を開ける人は全員保存できる）
+router.put(
+  '/inventory/map/positions',
+  authenticate,
+  requirePermission(['viewer', 'operator', 'manager', 'admin']),
+  validate({ body: plotMapPositionsBodySchema }),
+  withLogging('Plots', 'putPlotMapPositions', putPlotMapPositions)
 );
 
 // 空き区画一覧取得（議事録 2026-07-21 §6: 区画指定を手入力不可の選択式にする）
