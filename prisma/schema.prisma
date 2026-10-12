@@ -550,6 +550,9 @@ model CollectiveBurial {
   // 請求予定日を業務が手動指定したか（例外運用: 決まった年数より短くする等。業務確認 2026-06-07 Q17）。
   // true の間は自動再計算で上書きしない。false なら埋葬者の変更に追随して再計算する。
   billing_scheduled_date_manual Boolean       @default(false)
+  // true の区画は、備考の人数まで納骨された日を起点に合祀年を出す。
+  // 人数に達するまでは請求予定日を空にする（契約日には戻さない）。
+  starts_on_capacity            Boolean       @default(false)
   billing_status                BillingStatus @default(pending) // 請求ステータス
   billing_amount                Int? // 請求金額（円単位）
   notes                         String?       @db.Text // 備考
@@ -564,6 +567,15 @@ model CollectiveBurial {
   @@index([billing_status])
   @@index([billing_scheduled_date])
   @@map("collective_burials")
+}
+
+// 合祀を一斉に解約する月。行は1件だけ（id = 1）。
+model CollectiveBurialSetting {
+  id             Int      @id @default(1)
+  release_timing String   @default("october") @db.VarChar(20) // obon | october
+  updated_at     DateTime @updatedAt
+
+  @@map("collective_burial_settings")
 }
 
 // 更新履歴テーブル

@@ -1,5 +1,7 @@
 import { PrismaClient, Prisma, CollectiveBurial } from '@prisma/client';
 import { todayJstAsUtcDate, addYearsUtc } from '../utils/dateUtils';
+import { releaseDateInYear } from './releaseTiming';
+import { getReleaseTiming } from './settingsStore';
 
 /**
  * 起点日 + 有効期間で請求予定日を計算する（起点日の決定は {@link resolveCountdownBaseDate}）。
@@ -84,6 +86,29 @@ export const findFinalBurialDate = async (
 };
 
 /**
+ * 備考の人数に達した人の納骨日。早い順に数えて N 人目。
+ * 納骨日が足りなければ null（年を出さない）。
+ */
+export const findNthBurialDate = async (
+  prisma: PrismaClient | Prisma.TransactionClient,
+  contractPlotId: string,
+  capacity: number
+): Promise<Date | null> => {
+  if (capacity < 1) return null;
+  const people = await prisma.buriedPerson.findMany({
+    where: {
+      contract_plot_id: contractPlotId,
+      deleted_at: null,
+      burial_date: { not: null },
+    },
+    select: { burial_date: true },
+    orderBy: { burial_date: 'asc' },
+  });
+  const nth = people[capacity - 1]?.burial_date ?? null;
+  return nth;
+};
+
+/**
  * 合祀情報の埋葬人数と関連日付を自動更新
  * @param prisma Prismaクライアント（トランザクション対応）
  * @param plotId 区画ID
@@ -141,15 +166,35 @@ export const updateCollectiveBurialCount = async (
     !collectiveBurial.billing_scheduled_date_manual &&
     collectiveBurial.billing_status === 'pending'
   ) {
-    const contractPlot = await prisma.contractPlot.findUnique({
-      where: { id: plotId },
-      select: { contract_date: true },
-    });
-    updateData.billing_scheduled_date = resolveBillingScheduledDate(
-      contractPlot?.contract_date ?? null,
-      collectiveBurial.validity_period_years,
-      await findFinalBurialDate(prisma, plotId)
-    );
+    if (collectiveBurial.starts_on_capacity) {
+      // 人数が揃うまでは年を出さない。揃ったら、その人の納骨日＋年数の年に、
+      // 設定で選んだ月（お盆または10月）の日を入れる。
+      if (!capacityReached) {
+        updateData.billing_scheduled_date = null;
+      } else {
+        const nth = await findNthBurialDate(prisma, plotId, collectiveBurial.burial_capacity);
+        if (!nth) {
+          updateData.billing_scheduled_date = null;
+        } else {
+          const anniversary = addYearsUtc(nth, collectiveBurial.validity_period_years);
+          const timing = await getReleaseTiming(prisma);
+          updateData.billing_scheduled_date = releaseDateInYear(
+            anniversary.getUTCFullYear(),
+            timing
+          );
+        }
+      }
+    } else {
+      const contractPlot = await prisma.contractPlot.findUnique({
+        where: { id: plotId },
+        select: { contract_date: true },
+      });
+      updateData.billing_scheduled_date = resolveBillingScheduledDate(
+        contractPlot?.contract_date ?? null,
+        collectiveBurial.validity_period_years,
+        await findFinalBurialDate(prisma, plotId)
+      );
+    }
   }
 
   // 4. 合祀情報を更新
