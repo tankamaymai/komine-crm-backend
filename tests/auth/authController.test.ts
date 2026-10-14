@@ -788,9 +788,10 @@ describe('Auth Controller', () => {
       });
 
       it('Supabase更新成功後にDB更新が失敗したら、Supabaseメールを旧値へ戻すこと', async () => {
-        mockRequest.body = { email: 'new@example.com' };
+        mockRequest.body = { email: 'new@example.com', currentPassword: 'OldPass123' };
 
         mockPrisma.staff.findFirst.mockResolvedValue(null); // 重複なし
+        mockSupabaseAuth.signInWithPassword.mockResolvedValue({ data: {}, error: null });
         mockSupabaseAuth.admin.updateUserById.mockResolvedValue({ data: {}, error: null });
         mockPrisma.staff.update.mockRejectedValue(new Error('connection lost'));
 
@@ -823,9 +824,10 @@ describe('Auth Controller', () => {
       });
 
       it('正常系: メール変更がSupabase/DBの両方へ反映されること', async () => {
-        mockRequest.body = { email: 'new@example.com' };
+        mockRequest.body = { email: 'new@example.com', currentPassword: 'OldPass123' };
 
         mockPrisma.staff.findFirst.mockResolvedValue(null);
+        mockSupabaseAuth.signInWithPassword.mockResolvedValue({ data: {}, error: null });
         mockSupabaseAuth.admin.updateUserById.mockResolvedValue({ data: {}, error: null });
         mockPrisma.staff.update.mockResolvedValue({
           id: 1,
@@ -838,8 +840,37 @@ describe('Auth Controller', () => {
 
         await updateProfile(mockRequest as Request, mockResponse as Response);
 
+        expect(mockSupabaseAuth.signInWithPassword).toHaveBeenCalledWith({
+          email: 'old@example.com',
+          password: 'OldPass123',
+        });
         expect(mockSupabaseAuth.admin.updateUserById).toHaveBeenCalledTimes(1);
         expect(mockResponse.status).toHaveBeenCalledWith(200);
+      });
+
+      it('メール変更で現在のパスワードが無いときは更新しないこと', async () => {
+        mockRequest.body = { email: 'new@example.com' };
+
+        await updateProfile(mockRequest as Request, mockResponse as Response);
+
+        expect(mockSupabaseAuth.signInWithPassword).not.toHaveBeenCalled();
+        expect(mockSupabaseAuth.admin.updateUserById).not.toHaveBeenCalled();
+        expect(mockPrisma.staff.update).not.toHaveBeenCalled();
+        expect(mockResponse.status).toHaveBeenCalledWith(400);
+      });
+
+      it('メール変更で現在のパスワードが違うときは更新しないこと', async () => {
+        mockRequest.body = { email: 'new@example.com', currentPassword: 'wrong' };
+        mockSupabaseAuth.signInWithPassword.mockResolvedValue({
+          data: {},
+          error: { message: 'Invalid login credentials' },
+        });
+
+        await updateProfile(mockRequest as Request, mockResponse as Response);
+
+        expect(mockSupabaseAuth.admin.updateUserById).not.toHaveBeenCalled();
+        expect(mockPrisma.staff.update).not.toHaveBeenCalled();
+        expect(mockResponse.status).toHaveBeenCalledWith(401);
       });
     });
 
@@ -994,6 +1025,13 @@ describe('Auth Controller', () => {
     describe('resetPassword（新パスワード設定）', () => {
       let resetPassword: any;
 
+      const jwtWithAmr = (method: string): string => {
+        const payload = Buffer.from(JSON.stringify({ amr: [{ method, timestamp: 1 }] })).toString(
+          'base64url'
+        );
+        return `e30.${payload}.sig`;
+      };
+
       beforeEach(async () => {
         const authController = await import('../../src/auth/authController');
         resetPassword = authController.resetPassword;
@@ -1002,7 +1040,7 @@ describe('Auth Controller', () => {
       it('accessToken（implicitフロー）でユーザーを特定しパスワードを更新すること', async () => {
         // メールリンクのハッシュ #access_token=... から取り出したトークンで本人特定
         mockRequest.body = {
-          accessToken: 'valid-access-token',
+          accessToken: jwtWithAmr('recovery'),
           newPassword: 'NewPass123',
           confirmPassword: 'NewPass123',
         };
@@ -1014,7 +1052,7 @@ describe('Auth Controller', () => {
 
         await resetPassword(mockRequest as Request, mockResponse as Response);
 
-        expect(mockSupabaseAuth.getUser).toHaveBeenCalledWith('valid-access-token');
+        expect(mockSupabaseAuth.getUser).toHaveBeenCalledWith(jwtWithAmr('recovery'));
         expect(mockSupabaseAuth.admin.updateUserById).toHaveBeenCalledWith('user-uid-1', {
           password: 'NewPass123',
         });
@@ -1045,6 +1083,29 @@ describe('Auth Controller', () => {
         );
       });
 
+      it('普通のログイン鍵ではパスワードを更新しないこと', async () => {
+        mockRequest.body = {
+          accessToken: jwtWithAmr('password'),
+          newPassword: 'NewPass123',
+          confirmPassword: 'NewPass123',
+        };
+        mockSupabaseAuth.getUser.mockResolvedValue({
+          data: { user: { id: 'user-uid-login' } },
+          error: null,
+        });
+
+        await resetPassword(mockRequest as Request, mockResponse as Response);
+
+        expect(mockSupabaseAuth.admin.updateUserById).not.toHaveBeenCalled();
+        expect(mockResponse.status).toHaveBeenCalledWith(400);
+        expect(mockResponse.json).toHaveBeenCalledWith(
+          expect.objectContaining({
+            success: false,
+            error: expect.objectContaining({ code: 'INVALID_TOKEN' }),
+          })
+        );
+      });
+
       it('code（PKCEフロー後方互換）でもユーザーを特定して更新できること', async () => {
         mockRequest.body = {
           code: 'pkce-code',
@@ -1052,7 +1113,10 @@ describe('Auth Controller', () => {
           confirmPassword: 'NewPass123',
         };
         mockSupabaseAuth.exchangeCodeForSession.mockResolvedValue({
-          data: { user: { id: 'user-uid-2' } },
+          data: {
+            user: { id: 'user-uid-2' },
+            session: { access_token: jwtWithAmr('recovery') },
+          },
           error: null,
         });
         mockSupabaseAuth.admin.updateUserById.mockResolvedValue({ data: {}, error: null });
@@ -1068,7 +1132,7 @@ describe('Auth Controller', () => {
 
       it('accessToken と code 両方あれば accessToken を優先し code 交換を呼ばないこと', async () => {
         mockRequest.body = {
-          accessToken: 'tok',
+          accessToken: jwtWithAmr('invite'),
           code: 'should-be-ignored',
           newPassword: 'NewPass123',
           confirmPassword: 'NewPass123',
@@ -1081,7 +1145,7 @@ describe('Auth Controller', () => {
 
         await resetPassword(mockRequest as Request, mockResponse as Response);
 
-        expect(mockSupabaseAuth.getUser).toHaveBeenCalledWith('tok');
+        expect(mockSupabaseAuth.getUser).toHaveBeenCalledWith(jwtWithAmr('invite'));
         expect(mockSupabaseAuth.exchangeCodeForSession).not.toHaveBeenCalled();
       });
 
@@ -1101,7 +1165,7 @@ describe('Auth Controller', () => {
 
       it('Admin パスワード更新が失敗したら 500 を返すこと', async () => {
         mockRequest.body = {
-          accessToken: 'tok',
+          accessToken: jwtWithAmr('recovery'),
           newPassword: 'NewPass123',
           confirmPassword: 'NewPass123',
         };

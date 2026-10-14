@@ -72,9 +72,15 @@ export const updateProfileSchema = z
       .max(100, '名前は100文字以下で入力してください')
       .optional(),
     email: emailSchema.optional(),
+    // メールを変えるときだけ必須。名前だけの変更では不要。
+    currentPassword: z.string().optional(),
   })
   .refine((data) => data.name !== undefined || data.email !== undefined, {
     message: '名前またはメールアドレスのいずれかは必須です',
+  })
+  .refine((data) => data.email === undefined || Boolean(data.currentPassword), {
+    message: 'メールアドレスを変更するには現在のパスワードが必要です',
+    path: ['currentPassword'],
   });
 
 /**
