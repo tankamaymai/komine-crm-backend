@@ -91,3 +91,12 @@ https://komine-crm-frontend.vercel.app
 - 画面を本番に載せるときは、`tankamaymai/komine-crm-frontend` の **main** に載せる（この Vercel が自動で配る）
 - 本家 `zaitsu82/komine-crm-frontend` の main に入れただけでは、この本番住所は更新されない
 - 引き継ぎ前の `https://komine-cemetery-crm.vercel.app` は使わない
+
+### 本番の裏側（API）
+
+- 本番の裏側は Render の `komine-crm-backend`（https://komine-crm-backend-iwh2.onrender.com）。本番の画面は `/api/*` をここへ中継する
+- 裏側を本番に載せるときは、`tankamaymai/komine-crm-backend` の **main** に載せる（Render が自動で更新する。数分かかる）
+- 本家 `zaitsu82/komine-crm-backend` の main に入れただけでは、本番の裏側は更新されない（2026-10-14 に Render のつながり先を tankamaymai に切り替えた）
+- 画面と裏側の両方を変えたときは、裏側を先に本番へ載せる
+- 載ったかの確認: 新しく足した窓口に、ログインせずに聞いて `401`（ログインが必要）なら届いている。`404` ならまだ
+  - `/collective-burials/*` のように、窓口があるかを見る前にログインを確かめる所では、`401` が返っても届いた証拠にならない
