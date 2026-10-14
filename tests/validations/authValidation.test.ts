@@ -2,6 +2,7 @@ import {
   loginSchema,
   changePasswordSchema,
   resetPasswordSchema,
+  updateProfileSchema,
 } from '../../src/validations/authValidation';
 
 describe('Auth Validation', () => {
@@ -200,6 +201,25 @@ describe('Auth Validation', () => {
       };
 
       expect(() => resetPasswordSchema.parse(invalidData)).toThrow();
+    });
+  });
+
+  describe('updateProfileSchema', () => {
+    it('名前だけなら現在のパスワードなしで通ること', () => {
+      expect(() => updateProfileSchema.parse({ name: '新しい名前' })).not.toThrow();
+    });
+
+    it('メール変更は現在のパスワードがないとエラーになること', () => {
+      expect(() => updateProfileSchema.parse({ email: 'new@example.com' })).toThrow();
+    });
+
+    it('メール変更は現在のパスワードがあれば通ること', () => {
+      expect(() =>
+        updateProfileSchema.parse({
+          email: 'new@example.com',
+          currentPassword: 'OldPassword1',
+        })
+      ).not.toThrow();
     });
   });
 });

@@ -3,6 +3,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import prisma from '../db/prisma';
 import { getRequestLogger, logger } from '../utils/logger';
 import { isRateLimitError } from './isRateLimitError';
+import { tokenAllowsPasswordSetup } from './passwordSetupToken';
 
 // Cookie設定の定数
 // secure/sameSite は NODE_ENV ではなく実際の提供スキームに連動させる（#299）。
@@ -566,18 +567,67 @@ export const updateProfile = async (req: Request, res: Response) => {
       });
     }
 
-    const { name, email } = req.body as { name?: string; email?: string };
+    const { name, email, currentPassword } = req.body as {
+      name?: string;
+      email?: string;
+      currentPassword?: string;
+    };
 
     log.info(
       { staffId: req.user.id, hasName: name !== undefined, hasEmail: email !== undefined },
       'Auth: profile update attempt'
     );
 
+    // 保存済みメールは小文字。大文字だけの差では「変更」にしない。
+    const normalizedEmail = email?.trim().toLowerCase();
+    const emailChanged = Boolean(
+      normalizedEmail && normalizedEmail !== req.user.email.trim().toLowerCase()
+    );
+
+    // メールを変えるときは、今のパスワードが本人のものか先に確かめる。
+    // ログインしたまま席を外しても、パスワードを知らない人はメールをすり替えられない。
+    if (emailChanged) {
+      if (!currentPassword) {
+        log.warn(
+          { staffId: req.user.id, reason: 'missing_current_password' },
+          'Auth: profile update failed'
+        );
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'メールアドレスを変更するには現在のパスワードが必要です',
+            details: [],
+          },
+        });
+      }
+
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: req.user.email,
+        password: currentPassword,
+      });
+
+      if (signInError) {
+        log.warn(
+          { staffId: req.user.id, reason: 'current_password_invalid' },
+          'Auth: profile update failed'
+        );
+        return res.status(401).json({
+          success: false,
+          error: {
+            code: 'UNAUTHORIZED',
+            message: '現在のパスワードが正しくありません',
+            details: [],
+          },
+        });
+      }
+    }
+
     // メールアドレス変更時: 他ユーザーとの重複チェック
-    if (email && email !== req.user.email) {
+    if (emailChanged && normalizedEmail) {
       const existingStaff = await prisma.staff.findFirst({
         where: {
-          email,
+          email: normalizedEmail,
           id: { not: req.user.id },
         },
       });
@@ -597,7 +647,7 @@ export const updateProfile = async (req: Request, res: Response) => {
       // Supabaseのメールアドレスを更新
       const { error: supabaseError } = await supabase.auth.admin.updateUserById(
         req.user.supabase_uid,
-        { email }
+        { email: normalizedEmail }
       );
 
       if (supabaseError) {
@@ -623,12 +673,11 @@ export const updateProfile = async (req: Request, res: Response) => {
     // Staffテーブルを更新
     const updateData: { name?: string; email?: string } = {};
     if (name !== undefined) updateData.name = name;
-    if (email !== undefined) updateData.email = email;
+    if (emailChanged && normalizedEmail) updateData.email = normalizedEmail;
 
     // Supabase メール更新成功後に DB 更新が失敗すると Supabase=新メール / DB=旧メール の
     // 分散不整合が残り、以後どちらのメールでもログイン不能になりうる。
     // createStaff の補償削除と同様に、失敗時は Supabase 側を旧メールへ戻す（#233）。
-    const emailChanged = Boolean(email && email !== req.user.email);
     let updatedStaff;
     try {
       updatedStaff = await prisma.staff.update({
@@ -844,16 +893,40 @@ export const resetPassword = async (req: Request, res: Response) => {
         });
       }
 
+      // 普通のログイン鍵でも getUser は成功する。メールのリンク（再設定・招待）で
+      // 発行された鍵だけパスワードを上書きできる。
+      if (!tokenAllowsPasswordSetup(accessToken)) {
+        log.warn({ reason: 'not_password_setup_token' }, 'Auth: password reset failed');
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_TOKEN',
+            message: 'リンクが無効または期限切れです。再度パスワードリセットをお試しください。',
+            details: [],
+          },
+        });
+      }
+
       userId = userData.user.id;
     } else if (code) {
       log.info('Auth: password reset attempt via code');
       // Supabaseのコードをセッションに交換してユーザーを特定（PKCEフロー）
       const { data: sessionData, error: exchangeError } =
         await supabase.auth.exchangeCodeForSession(code);
+      const setupToken = sessionData?.session?.access_token;
 
-      if (exchangeError || !sessionData?.user) {
+      if (
+        exchangeError ||
+        !sessionData?.user ||
+        !setupToken ||
+        !tokenAllowsPasswordSetup(setupToken)
+      ) {
         log.warn(
-          { reason: 'invalid_code', error: exchangeError?.message || 'no user returned' },
+          {
+            reason:
+              exchangeError || !sessionData?.user ? 'invalid_code' : 'not_password_setup_token',
+            error: exchangeError?.message || 'no user returned',
+          },
           'Auth: password reset failed'
         );
         return res.status(400).json({
