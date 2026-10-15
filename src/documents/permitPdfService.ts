@@ -170,10 +170,12 @@ export async function generatePermitPdfFromPages(
 }
 
 /**
- * B5の許可証台紙へ文字だけ刷ると、台紙の絵に対して文字が左へ約1cm寄る。
- * 画面のプレビューと絵つきPDFは元の位置で合っているので、文字だけ印刷のときだけ右へ足す。
+ * B5の許可証台紙へ文字だけ刷ると、台紙の絵に対して文字が左へ約1cm、上へ約8mm寄る。
+ * 画面のプレビューと絵つきPDFは元の位置で合っているので、文字だけ印刷のときだけずらす。
+ * 下へのずれは、本籍の1列目と2列目の線の間隔（23pt）1本分。
  */
 export const PERMIT_TEXT_ONLY_SHIFT_RIGHT_PT = 28;
+export const PERMIT_TEXT_ONLY_SHIFT_DOWN_PT = 23;
 
 export function permitCertificatePages(includeBackground: boolean): readonly PermitPage[] {
   if (includeBackground) return PERMIT_CERTIFICATE_PAGES;
@@ -182,6 +184,7 @@ export function permitCertificatePages(includeBackground: boolean): readonly Per
     fields: page.fields.map((field) => ({
       ...field,
       x: field.x + PERMIT_TEXT_ONLY_SHIFT_RIGHT_PT,
+      y: field.y - PERMIT_TEXT_ONLY_SHIFT_DOWN_PT,
     })),
   }));
 }
