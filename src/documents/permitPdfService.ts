@@ -169,12 +169,30 @@ export async function generatePermitPdfFromPages(
   }
 }
 
+/**
+ * B5の許可証台紙へ文字だけ刷ると、台紙の絵に対して文字が左へ約1cm寄る。
+ * 画面のプレビューと絵つきPDFは元の位置で合っているので、文字だけ印刷のときだけ右へ足す。
+ */
+export const PERMIT_TEXT_ONLY_SHIFT_RIGHT_PT = 28;
+
+export function permitCertificatePages(includeBackground: boolean): readonly PermitPage[] {
+  if (includeBackground) return PERMIT_CERTIFICATE_PAGES;
+  return PERMIT_CERTIFICATE_PAGES.map((page) => ({
+    ...page,
+    fields: page.fields.map((field) => ({
+      ...field,
+      x: field.x + PERMIT_TEXT_ONLY_SHIFT_RIGHT_PT,
+    })),
+  }));
+}
+
 /** 許可証は1ページ（許可証書）のみ */
 export async function generatePermitPdf(
   data: PermitTemplateData,
   options?: { includeBackground?: boolean }
 ): Promise<{ success: boolean; buffer?: Buffer; error?: string }> {
-  return generatePermitPdfFromPages(PERMIT_CERTIFICATE_PAGES, data, options);
+  const includeBackground = options?.includeBackground !== false;
+  return generatePermitPdfFromPages(permitCertificatePages(includeBackground), data, options);
 }
 
 export async function generateEnvelopeLetterPdf(
