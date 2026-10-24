@@ -364,7 +364,7 @@ See `SETUP.md` for detailed deployment configuration, CORS setup, and troublesho
   - **Swagger Validation**: OpenAPI spec validation
   - **Security Audit**: npm audit (prod-only `--audit-level=high` は **fail させる gate**、dev 含む moderate+ は情報出力のみ)
   - **Docker Security Scan**: Trivy vulnerability scanner (修正可能な **CRITICAL** で fail させる gate + CRITICAL/HIGH を SARIF で GitHub Security に送出)
-  - **Test**: Run all 610+ tests on Node.js 20.x, 22.x (parallel)
+  - **Test**: Run all 610+ tests on Node.js 24.x
   - **Coverage**: Generate and upload to Codecov (Node 20.x only)
   - **All Checks Passed**: Final validation gate
 

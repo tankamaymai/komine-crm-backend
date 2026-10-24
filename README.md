@@ -63,7 +63,7 @@ Cemetery CRM Backendは、墓地管理業務のデジタル化を支援するRES
 ## 🛠️ 技術スタック
 
 ### バックエンド
-- **Node.js** (v18.x / v20.x / v22.x)
+- **Node.js** (v24.x)
 - **TypeScript** (v5.8.3)
 - **Express.js** (v4.19.2)
 
@@ -103,7 +103,7 @@ Cemetery CRM Backendは、墓地管理業務のデジタル化を支援するRES
 
 ### 前提条件
 
-- **Node.js**: v18.x, v20.x, v22.xのいずれか
+- **Node.js**: v24.x（24.22.1 以上）
 - **npm**: v8以降
 - **PostgreSQL**: Supabaseホストのインスタンスを使用（接続文字列を `DATABASE_URL` に設定）
 
@@ -347,7 +347,7 @@ GitHub Actions（`.github/workflows/ci.yml`）による自動テスト・ビル�
 - ✅ **Build**: TypeScriptコンパイルチェック
 - ✅ **Lint & Format Check**: ESLint + Prettier検証
 - ✅ **Swagger Validation**: API仕様書検証
-- ✅ **Test**: 複数Node.jsバージョン（18.x, 20.x, 22.x）でテスト実行
+- ✅ **Test**: Node.js 24.x でテスト実行
 - ✅ **Coverage**: Codecovへカバレッジレポート送信
 
 ---
