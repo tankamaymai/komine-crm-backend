@@ -7,54 +7,16 @@ import { BillingCategory, BillingRecordStatus } from '@prisma/client';
  * t_seikyu の移行先である Billing モデルへの CRUD と一覧クエリを検証する。
  */
 
-const dateString = z
-  .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, 'date must be YYYY-MM-DD')
-  .optional()
-  .nullable();
-
 const billingCategoryEnum = z.nativeEnum(BillingCategory);
 const billingStatusEnum = z.nativeEnum(BillingRecordStatus);
 
-// 作成
-export const createBillingSchema = z.object({
-  contractPlotId: z.string().uuid('contractPlotId must be a UUID'),
-  customerId: z.string().uuid('customerId must be a UUID'),
-  category: billingCategoryEnum,
-  amount: z.number().int().nonnegative(),
-  useStartYear: z.number().int().min(1900).max(2999).optional().nullable(),
-  useEndYear: z.number().int().min(1900).max(2999).optional().nullable(),
-  targetMonth: z.number().int().min(1).max(12).optional().nullable(),
-  billingYears: z.number().int().min(1).max(100).optional().nullable(),
-  contractDate: dateString,
-  billingDate: dateString,
-  applicationType: z.number().int().optional().nullable(),
-  billingType: z.number().int().optional().nullable(),
-  status: billingStatusEnum.optional(),
-  notes: z.string().max(2000).optional().nullable(),
-});
-
-export type CreateBillingInput = z.infer<typeof createBillingSchema>;
-
-// 更新（部分更新可）
-export const updateBillingSchema = z.object({
-  category: billingCategoryEnum.optional(),
-  amount: z.number().int().nonnegative().optional(),
-  useStartYear: z.number().int().min(1900).max(2999).optional().nullable(),
-  useEndYear: z.number().int().min(1900).max(2999).optional().nullable(),
-  targetMonth: z.number().int().min(1).max(12).optional().nullable(),
-  billingYears: z.number().int().min(1).max(100).optional().nullable(),
-  contractDate: dateString,
-  billingDate: dateString,
-  applicationType: z.number().int().optional().nullable(),
-  billingType: z.number().int().optional().nullable(),
-  status: billingStatusEnum.optional(),
-  terminated: z.boolean().optional(),
-  terminatedDate: dateString,
-  notes: z.string().max(2000).optional().nullable(),
-});
-
-export type UpdateBillingInput = z.infer<typeof updateBillingSchema>;
+// 作成・更新は共通パッケージの1枚。ここには一覧・前受け・管理料だけ残す。
+export {
+  createBillingSchema,
+  updateBillingSchema,
+  type CreateBillingInput,
+  type UpdateBillingInput,
+} from '@komine/types';
 
 // 一覧クエリ
 export const listBillingsQuerySchema = z.object({
