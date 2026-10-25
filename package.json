@@ -104,7 +104,8 @@
   },
   "overrides": {
     "@hono/node-server": "1.19.14",
-    "deepmerge-ts": "^8.0.2"
+    "deepmerge-ts": "^8.0.2",
+    "handlebars": "4.7.10"
   },
   "lint-staged": {
     "*.ts": [

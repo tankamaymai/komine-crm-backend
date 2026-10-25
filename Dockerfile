@@ -60,7 +60,7 @@ COPY prisma.config.ts ./
 # --ignore-scriptsでprepareスクリプト(husky)をスキップ（本番環境では不要）
 # --no-save prisma: preDeployCommand (prisma migrate deploy) 実行用にCLIを含める
 RUN npm ci --omit=dev --ignore-scripts && \
-    npm install --no-save prisma && \
+    npm install --no-save --omit=dev prisma && \
     npx prisma generate && \
     npm cache clean --force
 
