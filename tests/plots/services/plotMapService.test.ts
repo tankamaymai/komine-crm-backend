@@ -4,6 +4,7 @@
 import { PrismaClient } from '@prisma/client';
 
 import { getPlotMapOverlays } from '../../../src/plots/services/plotMapService';
+import { PLOT_MAP_SPECS } from '../../../src/plots/services/plotMapSpecs';
 
 type MockPrisma = { physicalPlot: { findMany: jest.Mock } };
 
@@ -40,6 +41,14 @@ function physical(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
 }
+
+describe('PLOT_MAP_SPECS', () => {
+  it('凛の地図は凛Cと凛Dの台帳も読む', () => {
+    expect(PLOT_MAP_SPECS['4-RIN'].areaNames).toEqual(
+      expect.arrayContaining(['凛C', '凛D', '凛Ｃ', '凛Ｄ'])
+    );
+  });
+});
 
 describe('getPlotMapOverlays', () => {
   it('契約のない物理区画は vacant', async () => {
