@@ -14,6 +14,11 @@ describe('tokenAllowsPasswordSetup', () => {
     expect(tokenAllowsPasswordSetup(jwtWithAmr([{ method: 'invite', timestamp: 1 }]))).toBe(true);
   });
 
+  it('メールリンクを開いたときの鍵（otp）は通す', () => {
+    // 招待・再設定メールをブラウザで開くと、鍵の入り方は otp になる
+    expect(tokenAllowsPasswordSetup(jwtWithAmr([{ method: 'otp', timestamp: 1 }]))).toBe(true);
+  });
+
   it('文字列だけの amr でも再設定は通す', () => {
     expect(tokenAllowsPasswordSetup(jwtWithAmr(['recovery']))).toBe(true);
   });
