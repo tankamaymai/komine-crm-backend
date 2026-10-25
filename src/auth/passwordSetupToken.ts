@@ -5,11 +5,16 @@
  * 普通のログイン鍵でも supabase.auth.getUser は成功するため、
  * 署名確認のあとに中身の「入り方」（amr）を見て弾く。
  *
+ * ブラウザのアドレスに `#access_token` が付く方式（implicit）では、
+ * 招待も再設定も入り方は `otp` になる。`invite` と `recovery` は
+ * 別方式（PKCE）のときだけ付く。普通のログイン（password）や
+ * 外部ログイン（oauth）は通さない。
+ *
  * 署名の確認は呼び出し側（getUser / exchangeCodeForSession）の仕事。
  * ここでは、確認済みの鍵の中身を読むだけ。
  */
 
-const PASSWORD_SETUP_METHODS = new Set(['recovery', 'invite']);
+const PASSWORD_SETUP_METHODS = new Set(['recovery', 'invite', 'otp']);
 
 export function tokenAllowsPasswordSetup(token: string): boolean {
   return readAmrMethods(token).some((method) => PASSWORD_SETUP_METHODS.has(method));

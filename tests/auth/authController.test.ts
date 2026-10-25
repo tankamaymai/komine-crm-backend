@@ -1037,6 +1037,26 @@ describe('Auth Controller', () => {
         resetPassword = authController.resetPassword;
       });
 
+      it('メールリンクの鍵（otp）でもパスワードを更新すること', async () => {
+        mockRequest.body = {
+          accessToken: jwtWithAmr('otp'),
+          newPassword: 'NewPass123',
+          confirmPassword: 'NewPass123',
+        };
+        mockSupabaseAuth.getUser.mockResolvedValue({
+          data: { user: { id: 'user-uid-otp' } },
+          error: null,
+        });
+        mockSupabaseAuth.admin.updateUserById.mockResolvedValue({ data: {}, error: null });
+
+        await resetPassword(mockRequest as Request, mockResponse as Response);
+
+        expect(mockSupabaseAuth.admin.updateUserById).toHaveBeenCalledWith('user-uid-otp', {
+          password: 'NewPass123',
+        });
+        expect(mockResponse.status).toHaveBeenCalledWith(200);
+      });
+
       it('accessToken（implicitフロー）でユーザーを特定しパスワードを更新すること', async () => {
         // メールリンクのハッシュ #access_token=... から取り出したトークンで本人特定
         mockRequest.body = {
