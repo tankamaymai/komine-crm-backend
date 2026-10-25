@@ -57,7 +57,11 @@ const RAW: Array<{ id: string; period: string; areaNames: string[] }> = [
   { id: '4-RURI2', period: '第4期', areaNames: ['るり庵テラスⅡ', 'るり庵Ⅱ'] },
   { id: '4-RURI-TERRACE', period: '第4期', areaNames: ['るり庵テラス'] },
   { id: '4-RURI-GARDEN', period: '第4期', areaNames: ['るり庵ガーデン'] },
-  { id: '4-RIN', period: '第4期', areaNames: ['凛', '凛A', '凛B', '凛Ａ', '凛Ｂ'] },
+  {
+    id: '4-RIN',
+    period: '第4期',
+    areaNames: ['凛', '凛A', '凛B', '凛C', '凛D', '凛Ａ', '凛Ｂ', '凛Ｃ', '凛Ｄ'],
+  },
   { id: '4-OMOI', period: '第4期', areaNames: ['想'] },
   { id: '4-MEGUMI', period: '第4期', areaNames: ['恵'] },
   { id: '4-IKOI', period: '第4期', areaNames: ['憩'] },
