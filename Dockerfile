@@ -1,7 +1,7 @@
 # ============================================
 # Stage 0: Build @komine/types
 # ============================================
-FROM node:22-alpine AS types
+FROM node:24-alpine AS types
 
 RUN apk add --no-cache git
 
@@ -23,12 +23,13 @@ ARG TYPES_REF=d41dda8266567ca7c1a97cbff48acff9ac348571
 RUN git clone https://github.com/zaitsu82/komine-types.git . && \
     git checkout ${TYPES_REF} && \
     npm ci && \
+    npm install zod@4.6.7 && \
     npm run build
 
 # ============================================
 # Stage 1: Dependencies
 # ============================================
-FROM node:22-alpine AS deps
+FROM node:24-alpine AS deps
 
 # git: GitHub URL依存パッケージのインストールに必要
 RUN apk add --no-cache git
@@ -60,14 +61,14 @@ COPY prisma.config.ts ./
 # --ignore-scriptsでprepareスクリプト(husky)をスキップ（本番環境では不要）
 # --no-save prisma: preDeployCommand (prisma migrate deploy) 実行用にCLIを含める
 RUN npm ci --omit=dev --ignore-scripts && \
-    npm install --no-save prisma && \
+    npm install --no-save --omit=dev prisma && \
     npx prisma generate && \
     npm cache clean --force
 
 # ============================================
 # Stage 2: Build
 # ============================================
-FROM node:22-alpine AS builder
+FROM node:24-alpine AS builder
 
 # git: GitHub URL依存パッケージのインストールに必要
 RUN apk add --no-cache git
@@ -101,7 +102,7 @@ RUN npm run build
 # ============================================
 # Stage 3: Production
 # ============================================
-FROM node:22-slim AS production
+FROM node:24-slim AS production
 
 # セキュリティ: ベースイメージの脆弱性パッチを適用してから Chromium + 日本語フォントを導入。
 # `apt-get upgrade` で libgnutls30 等の CVE 修正を取り込む (Trivy CRITICAL gate 対応)。
