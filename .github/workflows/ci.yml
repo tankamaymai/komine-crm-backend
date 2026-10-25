@@ -24,7 +24,7 @@ jobs:
       - name: Checkout and build shared types
         run: |
           git clone --depth 1 https://github.com/zaitsu82/komine-types.git ../packages/types
-          cd ../packages/types && npm ci && npm run build
+          cd ../packages/types && npm ci && npm install zod@4.6.7 && npm run build
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -60,7 +60,7 @@ jobs:
       - name: Checkout and build shared types
         run: |
           git clone --depth 1 https://github.com/zaitsu82/komine-types.git ../packages/types
-          cd ../packages/types && npm ci && npm run build
+          cd ../packages/types && npm ci && npm install zod@4.6.7 && npm run build
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -89,7 +89,7 @@ jobs:
       - name: Checkout and build shared types
         run: |
           git clone --depth 1 https://github.com/zaitsu82/komine-types.git ../packages/types
-          cd ../packages/types && npm ci && npm run build
+          cd ../packages/types && npm ci && npm install zod@4.6.7 && npm run build
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -213,7 +213,7 @@ jobs:
       - name: Checkout and build shared types
         run: |
           git clone --depth 1 https://github.com/zaitsu82/komine-types.git ../packages/types
-          cd ../packages/types && npm ci && npm run build
+          cd ../packages/types && npm ci && npm install zod@4.6.7 && npm run build
 
       - name: Setup Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v6
