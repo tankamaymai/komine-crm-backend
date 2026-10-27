@@ -3,17 +3,25 @@
  *
  * - GET /api/v1/yucho/billing : 請求対象データの一覧取得
  * - GET /api/v1/yucho/export  : 公式ファイル（名簿CSV / 決済CSV / 全銀120文字）を返却
+ * - POST /api/v1/yucho/result/preview : 結果ファイルの中身を台帳に突き合わせて見せる（書き込まない）
+ * - POST /api/v1/yucho/result/apply   : 引き落とせた分に入金を付ける
  */
 
 import { Request, Response, NextFunction } from 'express';
 import iconv from 'iconv-lite';
 import { ZodError } from 'zod';
 import { ValidationError } from '../middleware/errorHandler';
-import { yuchoBillingQuerySchema, yuchoExportQuerySchema } from '../validations/yuchoValidation';
+import {
+  yuchoBillingQuerySchema,
+  yuchoExportQuerySchema,
+  yuchoResultImportBodySchema,
+} from '../validations/yuchoValidation';
 import { fetchYuchoBillingData } from './yuchoService';
 import { buildDebitCsv, buildPayerMasterCsv } from './yuchoCsv';
 import { getYuchoBusinessSettings } from './yuchoSettings';
 import { buildZenginFile } from './yuchoZengin';
+import { YuchoResultFileError } from './yuchoResultFile';
+import { applyYuchoResult, previewYuchoResult } from './yuchoResultImport';
 
 const formatZodError = (err: ZodError, message = 'バリデーションエラー'): ValidationError => {
   const details = err.issues.map((i) => ({
@@ -104,5 +112,45 @@ export const exportYuchoCsv = async (
     res.status(200).send(buffer);
   } catch (error) {
     next(error);
+  }
+};
+
+const parseResultImportBody = (body: unknown) => {
+  const parsed = yuchoResultImportBodySchema.safeParse(body);
+  if (!parsed.success) {
+    throw formatZodError(parsed.error, parsed.error.issues[0]?.message);
+  }
+  const { year, month, fileBase64, lineFrom, lineTo } = parsed.data;
+  return { year, month, lineFrom, lineTo, file: Buffer.from(fileBase64, 'base64') };
+};
+
+const asValidationError = (error: unknown): unknown =>
+  error instanceof YuchoResultFileError
+    ? new ValidationError(error.message, [{ field: 'fileBase64', message: error.message }])
+    : error;
+
+export const previewYuchoResultFile = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const data = await previewYuchoResult(parseResultImportBody(req.body));
+    res.status(200).json({ success: true, data });
+  } catch (error) {
+    next(asValidationError(error));
+  }
+};
+
+export const applyYuchoResultFile = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const data = await applyYuchoResult(parseResultImportBody(req.body));
+    res.status(200).json({ success: true, data });
+  } catch (error) {
+    next(asValidationError(error));
   }
 };

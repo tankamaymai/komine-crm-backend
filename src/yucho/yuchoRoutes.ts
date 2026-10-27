@@ -6,7 +6,12 @@ import { Router } from 'express';
 import { authenticate } from '../middleware/auth';
 import { requirePermission, ROLES } from '../middleware/permission';
 import { withLogging } from '../middleware/controllerLogger';
-import { getYuchoBilling, exportYuchoCsv } from './yuchoController';
+import {
+  getYuchoBilling,
+  exportYuchoCsv,
+  previewYuchoResultFile,
+  applyYuchoResultFile,
+} from './yuchoController';
 
 const router = Router();
 
@@ -24,6 +29,22 @@ router.get(
   authenticate,
   requirePermission([ROLES.MANAGER, ROLES.ADMIN]),
   withLogging('Yucho', 'exportCsv', exportYuchoCsv)
+);
+
+// 引き落とし結果ファイルの中身を確かめる（書き込まない。manager以上）
+router.post(
+  '/result/preview',
+  authenticate,
+  requirePermission([ROLES.MANAGER, ROLES.ADMIN]),
+  withLogging('Yucho', 'previewResult', previewYuchoResultFile)
+);
+
+// 引き落とせた分に入金を付ける（manager以上）
+router.post(
+  '/result/apply',
+  authenticate,
+  requirePermission([ROLES.MANAGER, ROLES.ADMIN]),
+  withLogging('Yucho', 'applyResult', applyYuchoResultFile)
 );
 
 export default router;

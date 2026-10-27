@@ -3860,6 +3860,82 @@
           }
         }
       }
+    },
+    "/api/v1/yucho/result/preview": {
+      "post": {
+        "tags": [
+          "Yucho"
+        ],
+        "summary": "自動払込みの結果ファイルを台帳に突き合わせて見せる（書き込まない）",
+        "description": "ゆうちょＢｉｚダイレクトから落とした処理結果データ（全銀形式・120バイト固定、ゆうちょ形式も可）を読み、\n選んだ年・月の管理料の区画に突き合わせる。支払人コード、無ければ記号・番号・金額で当てる。\n各行の status:\n- will_record: 引き落とせた。その年の管理料の請求に入金を付ける\n- already_paid: 引き落とせたが、請求はもう払い済み\n- no_billing: 引き落とせたが、その年の管理料の請求が無い\n- amount_mismatch: 引き落とせた額が請求の残りより多い（自動では付けない）\n- failed: 引き落とせなかった（resultLabel に理由）\n- unmatched: 台帳の区画に当てられない\n送る前のファイル（トレーラの処理済・不能が0件）や形式違いは 400。\n",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/YuchoResultImportInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "突き合わせ結果（rows / summary / transferDate / monthMismatch）"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v1/yucho/result/apply": {
+      "post": {
+        "tags": [
+          "Yucho"
+        ],
+        "summary": "自動払込みの結果ファイルを取り込み、引き落とせた分に入金を付ける",
+        "description": "preview と同じ突き合わせを1つのまとまりの中でやり直し、will_record の行に入金（入金日=引き落とし日、\n料金種別=管理料）を作って請求の入金合計を計算し直す。failed の行は請求の備考に\n「ゆうちょ引き落とし不能 YYYY-MM-DD（理由）」を残す。払い済みの請求には付けないので、\n同じファイルを2回取り込んでも二重にならない。\n",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/YuchoResultImportInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "recordedCount / recordedAmount / notedFailedCount と突き合わせ結果（plan）"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3872,6 +3948,42 @@
       }
     },
     "schemas": {
+      "YuchoResultImportInput": {
+        "type": "object",
+        "required": [
+          "year",
+          "month",
+          "fileBase64"
+        ],
+        "properties": {
+          "year": {
+            "type": "integer",
+            "description": "引き落としの年（結果ファイルには月日しか無い）",
+            "example": 2027
+          },
+          "month": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 12,
+            "description": "引き落としファイルを出したときに選んだ月（突き合わせの候補になる）",
+            "example": 3
+          },
+          "fileBase64": {
+            "type": "string",
+            "description": "結果ファイルの中身を base64 にしたもの（5MB まで）"
+          },
+          "lineFrom": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "apply だけ。入金を付ける行の範囲の始め（ファイル内の順番）。省くと1"
+          },
+          "lineTo": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "apply だけ。範囲の終わり（含む）。省くと最後まで。画面は返事待ち30秒に収まるよう分けて呼ぶ"
+          }
+        }
+      },
       "SectionNameMaster": {
         "type": "object",
         "properties": {
