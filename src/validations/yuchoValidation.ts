@@ -90,6 +90,25 @@ export const yuchoExportQuerySchema = z
 
 export type YuchoExportQuery = z.infer<typeof yuchoExportQuerySchema>;
 
+/** 結果ファイルは1行120バイト。数千件でも数百KBなので、5MB（base64）を上限にする */
+const RESULT_FILE_BASE64_MAX = 5 * 1024 * 1024;
+
+// 結果ファイル取り込み（中身の確認 / 入金を付ける）
+export const yuchoResultImportBodySchema = z.object({
+  year: yearSchema,
+  month: monthSchema,
+  fileBase64: z
+    .string()
+    .min(1, '結果ファイルを選んでください')
+    .max(RESULT_FILE_BASE64_MAX, '結果ファイルが大きすぎます')
+    .regex(/^[A-Za-z0-9+/=\s]+$/, '結果ファイルを読めませんでした'),
+  // 入金を付ける行の範囲（ファイル内の順番、両端を含む）。画面が少しずつ分けて頼む
+  lineFrom: z.coerce.number().int().min(1).optional(),
+  lineTo: z.coerce.number().int().min(1).optional(),
+});
+
+export type YuchoResultImportBody = z.infer<typeof yuchoResultImportBodySchema>;
+
 // =============================================================================
 // レスポンス型定義
 // =============================================================================

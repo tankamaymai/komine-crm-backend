@@ -29,10 +29,21 @@ jest.mock('../../src/yucho/yuchoController', () => ({
     res.setHeader('Content-Disposition', 'attachment; filename="test.csv"');
     return res.status(200).send('1\r\n8\r\n9\r\n');
   }),
+  previewYuchoResultFile: jest.fn((_req, res) =>
+    res.status(200).json({ success: true, data: { rows: [] } })
+  ),
+  applyYuchoResultFile: jest.fn((_req, res) =>
+    res.status(200).json({ success: true, data: { recordedCount: 0 } })
+  ),
 }));
 
 import yuchoRoutes from '../../src/yucho/yuchoRoutes';
-import { getYuchoBilling, exportYuchoCsv } from '../../src/yucho/yuchoController';
+import {
+  getYuchoBilling,
+  exportYuchoCsv,
+  previewYuchoResultFile,
+  applyYuchoResultFile,
+} from '../../src/yucho/yuchoController';
 
 describe('Yucho Routes', () => {
   let app: Express;
@@ -59,5 +70,22 @@ describe('Yucho Routes', () => {
     expect(res.status).toBe(200);
     expect(exportYuchoCsv).toHaveBeenCalled();
     expect(res.headers['content-type']).toContain('text/csv');
+  });
+
+  it('POST /api/v1/yucho/result/preview → 結果ファイルの確認を呼ぶ', async () => {
+    const res = await request(app)
+      .post('/api/v1/yucho/result/preview')
+      .send({ year: 2027, month: 3, fileBase64: 'AAAA' });
+    expect(res.status).toBe(200);
+    expect(previewYuchoResultFile).toHaveBeenCalled();
+    expect(applyYuchoResultFile).not.toHaveBeenCalled();
+  });
+
+  it('POST /api/v1/yucho/result/apply → 入金を付ける処理を呼ぶ', async () => {
+    const res = await request(app)
+      .post('/api/v1/yucho/result/apply')
+      .send({ year: 2027, month: 3, fileBase64: 'AAAA' });
+    expect(res.status).toBe(200);
+    expect(applyYuchoResultFile).toHaveBeenCalled();
   });
 });

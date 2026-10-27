@@ -28,7 +28,12 @@ jest.mock('../../src/db/prisma', () => ({
   prisma: mockPrisma,
 }));
 
-import { getYuchoBilling, exportYuchoCsv } from '../../src/yucho/yuchoController';
+import {
+  getYuchoBilling,
+  exportYuchoCsv,
+  previewYuchoResultFile,
+} from '../../src/yucho/yuchoController';
+import { ValidationError } from '../../src/middleware/errorHandler';
 
 const buildContractPlot = (overrides: Record<string, unknown> = {}) => ({
   id: 'cp-1',
@@ -557,5 +562,27 @@ describe('yuchoController', () => {
       expect(next).not.toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(200);
     });
+  });
+});
+
+describe('yuchoController 結果ファイル取り込み', () => {
+  const run = async (handler: typeof previewYuchoResultFile, body: unknown) => {
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() } as unknown as Response;
+    const next = jest.fn() as unknown as NextFunction & jest.Mock;
+    await handler({ body } as Request, res, next);
+    return { res, next };
+  };
+
+  it('ファイルが無ければ 400（ValidationError）', async () => {
+    const { next } = await run(previewYuchoResultFile, { year: 2027, month: 3, fileBase64: '' });
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ValidationError);
+    expect(next.mock.calls[0][0].message).toBe('結果ファイルを選んでください');
+  });
+
+  it('結果ファイルとして読めなければ、その理由を 400 で返す', async () => {
+    const fileBase64 = Buffer.from('this is not a result file').toString('base64');
+    const { next } = await run(previewYuchoResultFile, { year: 2027, month: 3, fileBase64 });
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ValidationError);
+    expect(next.mock.calls[0][0].message).toContain('120文字ではありません');
   });
 });
