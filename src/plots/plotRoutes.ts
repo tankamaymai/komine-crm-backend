@@ -10,6 +10,7 @@ import {
   deletePlot,
   restoreContract,
   terminateContract,
+  terminateAllByContractor,
   changeContractor,
   getPlotContracts,
   createPlotContract,
@@ -177,6 +178,15 @@ router.get(
   requirePermission(['viewer', 'operator', 'manager', 'admin']),
   validate({ params: contractorIdParamsSchema }),
   withLogging('Plots', 'getContractorPlots', getContractorPlots)
+);
+
+// 人ごとの一括解約（まとめ買いした区画を全部戻す）。'/:id' より前に置く。
+router.post(
+  '/by-contractor/:customerId/terminate-all',
+  authenticate,
+  requirePermission(['operator', 'manager', 'admin']),
+  validate({ params: contractorIdParamsSchema, body: terminateContractSchema }),
+  withLogging('Plots', 'terminateAllByContractor', terminateAllByContractor)
 );
 
 // ==========================================

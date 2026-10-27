@@ -30,6 +30,7 @@ import {
 import prisma from '../../db/prisma';
 import { ValidationError, NotFoundError } from '../../middleware/errorHandler';
 import { assertAssignableCustomer } from '../services/assertAssignableCustomer';
+import { createAdditionalPlotsForCustomer } from '../services/createAdditionalPlots';
 import {
   recordContractPlotCreated,
   recordCustomerCreated,
@@ -50,6 +51,7 @@ export async function createPlotCore(
   contractPlotId: string;
   physicalPlotId: string;
   customerId: string;
+  applicantCustomerId: string | null;
 }> {
   // 入力バリデーション
   if (!input.contractPlot || !input.saleContract || !input.customer) {
@@ -260,6 +262,7 @@ export async function createPlotCore(
   // 7.5. 申込者（applicant）の作成（任意）
   // 旧画面は申込者と契約者を並列に持つ。指定された場合は別 Customer +
   // SaleContractRole(role=applicant) として保存する。
+  let applicantCustomerId: string | null = null;
   if (input.applicant) {
     const applicantCustomer = await tx.customer.create({
       data: {
@@ -280,6 +283,7 @@ export async function createPlotCore(
         legacy_danka_cd: input.applicant.legacyDankaCd ?? null,
       },
     });
+    applicantCustomerId = applicantCustomer.id;
     const applicantRoleRecord = await tx.saleContractRole.create({
       data: {
         contract_plot_id: contractPlot.id,
@@ -552,6 +556,7 @@ export async function createPlotCore(
     contractPlotId: contractPlot.id,
     physicalPlotId: physicalPlot.id,
     customerId: customer.id,
+    applicantCustomerId,
   };
 }
 
@@ -569,7 +574,18 @@ export const createPlot = async (
 
     const result = await prisma.$transaction(
       async (tx) => {
-        return createPlotCore(tx, input, req);
+        const core = await createPlotCore(tx, input, req);
+        const additional = input.additionalPlots?.length
+          ? await createAdditionalPlotsForCustomer(tx, {
+              customerId: core.customerId,
+              applicantCustomerId: core.applicantCustomerId,
+              additionalPlots: input.additionalPlots,
+              sharedSaleContract: input.saleContract,
+              firstPhysicalPlotId: core.physicalPlotId,
+              req,
+            })
+          : { contractPlotIds: [] };
+        return { ...core, additionalContractPlotIds: additional.contractPlotIds };
       },
       // 在庫面積の検証・作成・status再計算を並行更新と直列化する（#278）
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
@@ -666,6 +682,8 @@ export const createPlot = async (
               notes: createdContractPlot.collectiveBurial.notes,
             }
           : null,
+
+        additionalContractPlotIds: result.additionalContractPlotIds,
 
         createdAt: createdContractPlot?.created_at,
         updatedAt: createdContractPlot?.updated_at,

@@ -849,6 +849,74 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /api/v1/plots/by-contractor/{customerId}/terminate-all:
+    post:
+      tags:
+        - Plots
+      summary: その人の区画をまとめて解約
+      description: |
+        指定した人が今の契約者になっている active な契約区画を、全部 terminated にする。
+        名義変更で前の持ち主になった人の契約（role_end_date あり）は対象にしない。
+        1件解約と同じく区画ごとに残数を再計算し、履歴を残す。途中で失敗したら、どれも解約しない。
+        顧客レコードは変更しない。復活は今どおり1区画ずつ /plots/{id}/restore で行う。
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: customerId
+          in: path
+          required: true
+          description: 契約者の顧客ID（UUID）
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - reason
+              properties:
+                reason:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                  description: 解約理由（各区画の履歴に記録される）
+                  example: 全区画の返還
+      responses:
+        "200":
+          description: 解約成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      message:
+                        type: string
+                        example: 2件の契約区画を解約しました
+                      customerId:
+                        type: string
+                        format: uuid
+                      terminatedIds:
+                        type: array
+                        items:
+                          type: string
+                          format: uuid
+        "400":
+          description: バリデーションエラー、または解約できる契約がない
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /api/v1/plots/{id}/restore:
     post:
       tags:
@@ -4339,6 +4407,58 @@ components:
                 type: string
                 description: 備考
                 maxLength: 1000
+                nullable: true
+        additionalPlots:
+          type: array
+          maxItems: 19
+          description: >-
+            まとめ買いの2つ目以降の区画（1つ目と合わせて20件まで）。
+            1つ目と同じ契約者（と申込者）で区画ごとに契約を作る。全部成功か全部失敗のどちらか。
+            契約日・許可番号などは1つ目の販売契約を引き継ぐが、契約金額とメモは引き継がない。
+            埋葬者・墓石などの付帯情報は1つ目にだけ付く。
+          items:
+            type: object
+            required:
+              - physicalPlot
+              - contractPlot
+            properties:
+              physicalPlot:
+                type: object
+                required:
+                  - id
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                    description: 空き、または一部販売済みの物理区画ID
+              contractPlot:
+                type: object
+                required:
+                  - contractAreaSqm
+                properties:
+                  contractAreaSqm:
+                    type: number
+                    description: 契約面積（その区画の残りの広さ以下）
+                    example: 1.8
+                  locationDescription:
+                    type: string
+                    maxLength: 200
+                    nullable: true
+              saleContract:
+                type: object
+                properties:
+                  price:
+                    type: number
+                    nullable: true
+                  notes:
+                    type: string
+                    maxLength: 1000
+                    nullable: true
+              usageFee:
+                type: object
+                nullable: true
+              managementFee:
+                type: object
                 nullable: true
 
     UpdatePlotInput:
