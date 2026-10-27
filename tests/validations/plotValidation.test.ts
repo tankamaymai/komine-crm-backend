@@ -139,6 +139,52 @@ describe('Plot Validation (ContractPlot Model)', () => {
       expect(() => createPlotSchema.parse(dataWithoutPhysicalPlot)).toThrow();
     });
 
+    describe('まとめ買い登録', () => {
+      const PLOT_ID = '11111111-1111-4111-8111-111111111111';
+      const EXTRA_ID = '22222222-2222-4222-8222-222222222222';
+
+      it('空き区画を選んだときは physicalPlot に id だけでよい', () => {
+        const parsed = createPlotSchema.parse({
+          ...validCreatePlotData,
+          physicalPlot: { id: PLOT_ID },
+        });
+        expect(parsed.physicalPlot.id).toBe(PLOT_ID);
+        expect(parsed.physicalPlot.plotNumber).toBeUndefined();
+      });
+
+      it('additionalPlots を落とさずに通す', () => {
+        const parsed = createPlotSchema.parse({
+          ...validCreatePlotData,
+          physicalPlot: { id: PLOT_ID },
+          additionalPlots: [
+            {
+              physicalPlot: { id: EXTRA_ID },
+              contractPlot: { contractAreaSqm: 1.8 },
+              saleContract: { price: 500000 },
+              managementFee: { managementFee: '6000', billingMonth: '3' },
+            },
+          ],
+        });
+        expect(parsed.additionalPlots).toEqual([
+          expect.objectContaining({
+            physicalPlot: { id: EXTRA_ID },
+            contractPlot: { contractAreaSqm: 1.8 },
+            saleContract: { price: 500000 },
+            managementFee: expect.objectContaining({ managementFee: '6000', billingMonth: '3' }),
+          }),
+        ]);
+      });
+
+      it('追加区画は id が無いと止める', () => {
+        expect(() =>
+          createPlotSchema.parse({
+            ...validCreatePlotData,
+            additionalPlots: [{ physicalPlot: {}, contractPlot: { contractAreaSqm: 1.8 } }],
+          })
+        ).toThrow();
+      });
+    });
+
     it('contractPlotが必須であること', () => {
       const { contractPlot, ...dataWithoutContractPlot } = validCreatePlotData;
       expect(() => createPlotSchema.parse(dataWithoutContractPlot)).toThrow();

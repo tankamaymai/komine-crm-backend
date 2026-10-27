@@ -13,6 +13,7 @@ import {
   saleContractSchema as sharedSaleContractSchema,
   contractPlotSchema as sharedContractPlotSchema,
   physicalPlotSchema as sharedPhysicalPlotSchema,
+  additionalPlotsFieldSchema,
 } from '@komine/types';
 import {
   uuidSchema,
@@ -383,6 +384,8 @@ export const createPlotSchema = z.object({
   // 埋葬者（任意）。スキーマ欠落により validate() で剥がされ、createPlot の保存処理
   // （createPlot.ts:375-424, PR#335）に届かず HTTP 経路で破棄されていた（#384, #320 同型）
   buriedPersons: buriedPersonsSchema.optional(),
+  // まとめ買いの2つ目以降の区画（任意）。無いときは今までどおり1区画の登録
+  additionalPlots: additionalPlotsFieldSchema,
 });
 
 /**
