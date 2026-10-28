@@ -176,6 +176,10 @@ export async function generatePermitPdfFromPages(
 export const PERMIT_TEXT_ONLY_SHIFT_RIGHT_PT = 28;
 export const PERMIT_TEXT_ONLY_SHIFT_DOWN_PT = 5.7;
 
+/** 本籍・現住所の1行目は、実物の台紙で線より約1mm上に出るので、さらに下げる */
+export const PERMIT_ADDRESS_LINE1_EXTRA_DOWN_PT = 2.8;
+const ADDRESS_LINE1_FIELD_IDS = new Set(['registeredAddress', 'currentAddress']);
+
 export function permitCertificatePages(includeBackground: boolean): readonly PermitPage[] {
   if (includeBackground) return PERMIT_CERTIFICATE_PAGES;
   return PERMIT_CERTIFICATE_PAGES.map((page) => ({
@@ -183,7 +187,10 @@ export function permitCertificatePages(includeBackground: boolean): readonly Per
     fields: page.fields.map((field) => ({
       ...field,
       x: field.x + PERMIT_TEXT_ONLY_SHIFT_RIGHT_PT,
-      y: field.y - PERMIT_TEXT_ONLY_SHIFT_DOWN_PT,
+      y:
+        field.y -
+        PERMIT_TEXT_ONLY_SHIFT_DOWN_PT -
+        (ADDRESS_LINE1_FIELD_IDS.has(field.id) ? PERMIT_ADDRESS_LINE1_EXTRA_DOWN_PT : 0),
     })),
   }));
 }
