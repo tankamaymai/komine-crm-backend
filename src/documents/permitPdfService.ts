@@ -175,15 +175,28 @@ export async function generatePermitPdfFromPages(
  */
 export const PERMIT_TEXT_ONLY_SHIFT_RIGHT_PT = 28;
 
+/**
+ * 文字だけ印刷はA4横で出す。旧システムと同じく、プリンターはA4で刷り、
+ * B5の台紙はA4の右下の角に合わせて置く。
+ */
+export const PERMIT_PRINT_PAPER_WIDTH_PT = (297 / 25.4) * 72;
+export const PERMIT_PRINT_PAPER_HEIGHT_PT = (210 / 25.4) * 72;
+
 export function permitCertificatePages(includeBackground: boolean): readonly PermitPage[] {
   if (includeBackground) return PERMIT_CERTIFICATE_PAGES;
-  return PERMIT_CERTIFICATE_PAGES.map((page) => ({
-    ...page,
-    fields: page.fields.map((field) => ({
-      ...field,
-      x: field.x + PERMIT_TEXT_ONLY_SHIFT_RIGHT_PT,
-    })),
-  }));
+  return PERMIT_CERTIFICATE_PAGES.map((page) => {
+    // 台紙の下端はA4の下端にそろうので、上下は動かさない
+    const cardLeftOnPaper = PERMIT_PRINT_PAPER_WIDTH_PT - page.widthPt;
+    return {
+      ...page,
+      widthPt: PERMIT_PRINT_PAPER_WIDTH_PT,
+      heightPt: PERMIT_PRINT_PAPER_HEIGHT_PT,
+      fields: page.fields.map((field) => ({
+        ...field,
+        x: field.x + cardLeftOnPaper + PERMIT_TEXT_ONLY_SHIFT_RIGHT_PT,
+      })),
+    };
+  });
 }
 
 /** 許可証は1ページ（許可証書）のみ */
