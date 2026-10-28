@@ -1,10 +1,13 @@
 import { ENVELOPE_LETTER_PAGES, PERMIT_CERTIFICATE_PAGES } from '@komine/types';
 
 import {
+  PERMIT_ADDRESS_LINE1_EXTRA_DOWN_PT,
   PERMIT_TEXT_ONLY_SHIFT_DOWN_PT,
   PERMIT_TEXT_ONLY_SHIFT_RIGHT_PT,
   permitCertificatePages,
 } from '../../src/documents/permitPdfService';
+
+const ADDRESS_LINE1_IDS = ['registeredAddress', 'currentAddress'];
 
 describe('許可証の文字だけ印刷の位置', () => {
   it('台紙に文字だけ刷るときは、全項目を右へ約1cm、下へ約2mmずらす', () => {
@@ -18,7 +21,24 @@ describe('許可証の文字だけ印刷の位置', () => {
     shifted.forEach((field, i) => {
       expect(field.id).toBe(original[i]!.id);
       expect(field.x).toBe(original[i]!.x + 28);
+      if (ADDRESS_LINE1_IDS.includes(field.id)) return;
       expect(field.y).toBe(original[i]!.y - PERMIT_TEXT_ONLY_SHIFT_DOWN_PT);
+    });
+  });
+
+  it('本籍と現住所の1行目だけ、さらに下へ約1mmずらす', () => {
+    const original = PERMIT_CERTIFICATE_PAGES[0]!.fields;
+    const shifted = permitCertificatePages(false)[0]!.fields;
+
+    // 1mm = 2.83pt
+    expect(PERMIT_ADDRESS_LINE1_EXTRA_DOWN_PT).toBeCloseTo((1 / 25.4) * 72, 1);
+    ADDRESS_LINE1_IDS.forEach((id) => {
+      const before = original.find((f) => f.id === id)!;
+      const after = shifted.find((f) => f.id === id)!;
+      expect(after.y).toBeCloseTo(
+        before.y - PERMIT_TEXT_ONLY_SHIFT_DOWN_PT - PERMIT_ADDRESS_LINE1_EXTRA_DOWN_PT,
+        5
+      );
     });
   });
 
