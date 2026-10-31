@@ -104,6 +104,7 @@ describe('getUnpaidBillings', () => {
             category: 'management_fee',
             year: 2026,
             remainingAmount: 10000,
+            nextPaymentDate: null,
           },
         ],
       },

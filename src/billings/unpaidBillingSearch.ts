@@ -1,5 +1,11 @@
 export const remainingAmount = (amount: number, paidAmount: number): number => amount - paidAmount;
 
+/** UTC 日付を YYYY-MM-DD にする。約束日の保存と同じ付け方 */
+export const dateOnlyString = (value: Date | null | undefined): string | null => {
+  if (!value) return null;
+  return value.toISOString().slice(0, 10);
+};
+
 export const isCollectibleUnpaid = (status: string, remaining: number): boolean =>
   remaining >= 1 && !['paid', 'terminated', 'written_off'].includes(status);
 

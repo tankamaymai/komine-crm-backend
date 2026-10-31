@@ -15,6 +15,7 @@ import {
 import prisma from '../db/prisma';
 import { ValidationError } from '../middleware/errorHandler';
 import {
+  dateOnlyString,
   displayYear,
   isCollectibleUnpaid,
   jstYear,
@@ -88,6 +89,7 @@ const toUnpaidItem = (row: UnpaidBillingRow, q: string): UnpaidBillingItem => {
     category: row.category as BillingCategory,
     year: displayYear(row.use_start_year, row.use_end_year, jstYear(row.billing_date)),
     remainingAmount: remainingAmount(row.amount, row.paid_amount),
+    nextPaymentDate: dateOnlyString(row.next_payment_date),
   };
 };
 

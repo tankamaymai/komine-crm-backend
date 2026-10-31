@@ -888,6 +888,7 @@ model Billing {
   // 入金集計（キャッシュ。Payment から自動計算）
   paid_amount       Int       @default(0) // 入金合計
   last_payment_date DateTime? @db.Date // 最終入金日
+  next_payment_date DateTime? @db.Date // 次に払う日（窓口の約束。1請求につき1つ）
 
   // 解約
   terminated      Boolean   @default(false) // 解約済フラグ
