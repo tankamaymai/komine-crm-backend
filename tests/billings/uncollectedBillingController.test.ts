@@ -90,6 +90,7 @@ describe('getUncollectedBillings', () => {
       category: 'management_fee',
       year: 2026,
       remainingAmount: 10000,
+      nextPaymentDate: null,
     });
     expect(payload.data.pagination).toEqual({
       page: 1,
@@ -128,6 +129,38 @@ describe('getUncollectedBillings', () => {
     expect(next).not.toHaveBeenCalled();
     const payload = (res.json as jest.Mock).mock.calls[0][0];
     expect(payload.data.items).toEqual([]);
+  });
+
+  it('次の日がある人を上にし、日付が早い順。無い人は残額の大きい順で下', async () => {
+    mockPrisma.billing.findMany.mockResolvedValue([
+      unpaidRow({ id: 'no-date-low', amount: 1000, next_payment_date: null }),
+      unpaidRow({
+        id: 'late',
+        amount: 100,
+        next_payment_date: new Date('2026-12-01T00:00:00.000Z'),
+      }),
+      unpaidRow({ id: 'no-date-high', amount: 9000, next_payment_date: null }),
+      unpaidRow({
+        id: 'early',
+        amount: 50,
+        next_payment_date: new Date('2026-01-01T00:00:00.000Z'),
+      }),
+    ]);
+    const req = buildRequest({});
+    const res = buildResponse();
+    const next = jest.fn() as NextFunction;
+
+    await getUncollectedBillings(req as Request, res as Response, next);
+
+    const items = (res.json as jest.Mock).mock.calls[0][0].data.items;
+    expect(items.map((item: { billingId: string }) => item.billingId)).toEqual([
+      'early',
+      'late',
+      'no-date-high',
+      'no-date-low',
+    ]);
+    expect(items[0].nextPaymentDate).toBe('2026-01-01');
+    expect(items[2].nextPaymentDate).toBeNull();
   });
 
   it('ページ2は残額2番目の1件と pagination を返す', async () => {

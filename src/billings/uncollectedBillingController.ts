@@ -13,7 +13,13 @@ import {
 } from '@komine/types';
 import prisma from '../db/prisma';
 import { ValidationError } from '../middleware/errorHandler';
-import { displayYear, isCollectibleUnpaid, jstYear, remainingAmount } from './unpaidBillingSearch';
+import {
+  dateOnlyString,
+  displayYear,
+  isCollectibleUnpaid,
+  jstYear,
+  remainingAmount,
+} from './unpaidBillingSearch';
 
 const nameContains = (q: string) => ({
   contains: q,
@@ -138,11 +144,15 @@ const toUnpaidItem = (row: UnpaidBillingRow, q: string | undefined): UnpaidBilli
     category: row.category as BillingCategory,
     year: displayYear(row.use_start_year, row.use_end_year, jstYear(row.billing_date)),
     remainingAmount: remainingAmount(row.amount, row.paid_amount),
+    nextPaymentDate: dateOnlyString(row.next_payment_date),
   };
 };
 
 const displayNumberOf = (row: UnpaidBillingRow): string | null =>
   row.contractPlot?.physicalPlot?.display_number ?? null;
+
+const promiseTime = (row: UnpaidBillingRow): number | null =>
+  row.next_payment_date ? row.next_payment_date.getTime() : null;
 
 const compareCollectible = (a: UnpaidBillingRow, b: UnpaidBillingRow): number => {
   const remainingDiff =
@@ -206,7 +216,14 @@ export const getUncollectedBillings = async (
           row.category === 'management_fee'
         );
       })
-      .sort(compareCollectible);
+      .sort((a, b) => {
+        const da = promiseTime(a);
+        const db = promiseTime(b);
+        if (da != null && db != null && da !== db) return da - db;
+        if (da != null && db == null) return -1;
+        if (da == null && db != null) return 1;
+        return compareCollectible(a, b);
+      });
 
     const totalCount = collectible.length;
     const start = (page - 1) * limit;

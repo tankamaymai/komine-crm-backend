@@ -120,6 +120,7 @@ describe('recalculateBillingPayments', () => {
         paid_amount: 10000,
         last_payment_date: new Date('2026-05-01'),
         status: 'paid',
+        next_payment_date: null,
       },
     });
   });
@@ -166,7 +167,7 @@ describe('recalculateBillingPayments', () => {
     // paid_amount / last_payment_date は上書きせず、status のみ既存 paid_amount から再算出
     expect(billingUpdate).toHaveBeenCalledWith({
       where: { id: 'b1' },
-      data: { status: 'paid' },
+      data: { status: 'paid', next_payment_date: null },
     });
   });
 

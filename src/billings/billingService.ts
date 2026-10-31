@@ -38,6 +38,13 @@ export const computeBillingStatus = (
 
 type BillingClient = Prisma.TransactionClient | typeof prisma;
 
+/** 残額が 0 になった請求は、次に払う日を消す */
+const clearedNextPaymentDate = (
+  amount: number,
+  paidAmount: number
+): { next_payment_date: null } | Record<string, never> =>
+  amount > 0 && paidAmount >= amount ? { next_payment_date: null } : {};
+
 /**
  * 指定の Billing について、紐付く Payment 群から
  *  - paid_amount（入金合計）
@@ -71,7 +78,10 @@ export const recalculateBillingPayments = async (
     const preservedStatus = computeBillingStatus(billing, billing.paid_amount);
     await client.billing.update({
       where: { id: billingId },
-      data: { status: preservedStatus },
+      data: {
+        status: preservedStatus,
+        ...clearedNextPaymentDate(billing.amount, billing.paid_amount),
+      },
     });
     await recalculateContractPlotPaymentStatus(client, billing.contract_plot_id);
     return;
@@ -88,11 +98,12 @@ export const recalculateBillingPayments = async (
 
   await client.billing.update({
     where: { id: billingId },
-    data: {
-      paid_amount: paidAmount,
-      last_payment_date: lastPaymentDate,
-      status,
-    },
+      data: {
+        paid_amount: paidAmount,
+        last_payment_date: lastPaymentDate,
+        status,
+        ...clearedNextPaymentDate(billing.amount, paidAmount),
+      },
   });
 
   // 入金集計が変わったので、紐付く ContractPlot の payment_status も再計算する（#162）

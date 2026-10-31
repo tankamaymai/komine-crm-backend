@@ -106,7 +106,7 @@ describe('settleRemaining', () => {
   let res: Partial<Response>;
   let next: NextFunction;
   let txMock: {
-    billing: { findFirst: jest.Mock };
+    billing: { findFirst: jest.Mock; update: jest.Mock };
     payment: { create: jest.Mock };
   };
 
@@ -115,7 +115,7 @@ describe('settleRemaining', () => {
     res = buildResponse();
     next = jest.fn();
     txMock = {
-      billing: { findFirst: jest.fn() },
+      billing: { findFirst: jest.fn(), update: jest.fn() },
       payment: { create: jest.fn() },
     };
     mockPrisma.$transaction.mockImplementation(async (cb: (tx: typeof txMock) => unknown) =>
@@ -127,10 +127,13 @@ describe('settleRemaining', () => {
     txMock.billing.findFirst.mockResolvedValue(billedUnpaid());
     txMock.payment.create.mockResolvedValue(buildPaymentRow());
 
-    const req = buildRequest({ billingId: BILLING_UUID });
-    await settleRemaining(req as Request, res as Response, next);
-
     const todayJst = todayJstDateString();
+    const req = buildRequest({
+      billingId: BILLING_UUID,
+      paymentAmount: 10000,
+      paymentDate: todayJst,
+    });
+    await settleRemaining(req as Request, res as Response, next);
     expect(txMock.payment.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
@@ -157,7 +160,11 @@ describe('settleRemaining', () => {
       billedUnpaid({ paid_amount: 10000, status: 'paid' })
     );
 
-    const req = buildRequest({ billingId: BILLING_UUID });
+    const req = buildRequest({
+      billingId: BILLING_UUID,
+      paymentAmount: 10000,
+      paymentDate: '2026-01-01',
+    });
     await settleRemaining(req as Request, res as Response, next);
 
     expect(next).toHaveBeenCalledWith(expect.any(ValidationError));
@@ -172,7 +179,11 @@ describe('settleRemaining', () => {
   it('請求が無ければ NotFoundError', async () => {
     txMock.billing.findFirst.mockResolvedValue(null);
 
-    const req = buildRequest({ billingId: BILLING_UUID });
+    const req = buildRequest({
+      billingId: BILLING_UUID,
+      paymentAmount: 10000,
+      paymentDate: '2026-01-01',
+    });
     await settleRemaining(req as Request, res as Response, next);
 
     expect(next).toHaveBeenCalledWith(expect.any(NotFoundError));
@@ -180,20 +191,187 @@ describe('settleRemaining', () => {
     expect(txMock.payment.create).not.toHaveBeenCalled();
   });
 
-  it('body に paymentAmount があっても create には残額を使う', async () => {
+  it('護持費の一部は指定した金額と次の日を残し、入金のあとに約束を上書きする', async () => {
     txMock.billing.findFirst.mockResolvedValue(billedUnpaid());
-    txMock.payment.create.mockResolvedValue(buildPaymentRow());
+    txMock.payment.create.mockResolvedValue(buildPaymentRow({ payment_amount: 3000 }));
 
-    const req = buildRequest({ billingId: BILLING_UUID, paymentAmount: 1 });
+    const req = buildRequest({
+      billingId: BILLING_UUID,
+      paymentAmount: 3000,
+      paymentDate: '2026-10-01',
+      nextPaymentDate: '2026-12-01',
+      seenRemaining: 10000,
+    });
     await settleRemaining(req as Request, res as Response, next);
 
     expect(txMock.payment.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          payment_amount: 10000,
+          payment_amount: 3000,
+          payment_date: new Date('2026-10-01T00:00:00.000Z'),
         }),
       })
     );
+    expect(recalculateBillingPaymentsMock).toHaveBeenCalledWith(txMock, BILLING_UUID);
+    expect(txMock.billing.update).toHaveBeenCalledWith({
+      where: { id: BILLING_UUID },
+      data: { next_payment_date: new Date('2026-12-01T00:00:00.000Z') },
+    });
     expect(res.status).toHaveBeenCalledWith(201);
+    expect(res.json).toHaveBeenCalledWith({
+      success: true,
+      data: { remainingAmount: 7000, nextPaymentDate: '2026-12-01' },
+    });
+  });
+
+  it('護持費の0円は入金を作らず次の日だけ残す', async () => {
+    txMock.billing.findFirst.mockResolvedValue(billedUnpaid());
+
+    const req = buildRequest({
+      billingId: BILLING_UUID,
+      paymentAmount: 0,
+      nextPaymentDate: '2026-12-01',
+    });
+    await settleRemaining(req as Request, res as Response, next);
+
+    expect(txMock.payment.create).not.toHaveBeenCalled();
+    expect(recalculateBillingPaymentsMock).not.toHaveBeenCalled();
+    expect(txMock.billing.update).toHaveBeenCalledWith({
+      where: { id: BILLING_UUID },
+      data: { next_payment_date: new Date('2026-12-01T00:00:00.000Z') },
+    });
+    expect(res.json).toHaveBeenCalledWith({
+      success: true,
+      data: { remainingAmount: 10000, nextPaymentDate: '2026-12-01' },
+    });
+  });
+
+  it('全額を入れると次の日は残さない', async () => {
+    txMock.billing.findFirst.mockResolvedValue(billedUnpaid());
+    txMock.payment.create.mockResolvedValue(buildPaymentRow());
+
+    const req = buildRequest({
+      billingId: BILLING_UUID,
+      paymentAmount: 10000,
+      paymentDate: '2026-10-01',
+      nextPaymentDate: '2026-12-01',
+    });
+    await settleRemaining(req as Request, res as Response, next);
+
+    expect(txMock.billing.update).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({
+      success: true,
+      data: { remainingAmount: 0, nextPaymentDate: null },
+    });
+  });
+
+  it('一部なのに次の日が無いと止める', async () => {
+    txMock.billing.findFirst.mockResolvedValue(billedUnpaid());
+
+    const req = buildRequest({
+      billingId: BILLING_UUID,
+      paymentAmount: 3000,
+      paymentDate: '2026-10-01',
+    });
+    await settleRemaining(req as Request, res as Response, next);
+
+    expect((next as jest.Mock).mock.calls[0][0].message).toBe('次に払う日を書いてください');
+    expect(txMock.payment.create).not.toHaveBeenCalled();
+  });
+
+  it('残額より多い金額は、見ていた残額と同じなら残額超過で止める', async () => {
+    txMock.billing.findFirst.mockResolvedValue(billedUnpaid());
+
+    const req = buildRequest({
+      billingId: BILLING_UUID,
+      paymentAmount: 10001,
+      paymentDate: '2026-10-01',
+      seenRemaining: 10000,
+    });
+    await settleRemaining(req as Request, res as Response, next);
+
+    expect((next as jest.Mock).mock.calls[0][0].message).toBe('残っている金額までにしてください');
+    expect(txMock.payment.create).not.toHaveBeenCalled();
+  });
+
+  it('見ていた残額と今の残額が違い、入力が今の残額を超えると残額変更で止める', async () => {
+    txMock.billing.findFirst.mockResolvedValue(billedUnpaid({ paid_amount: 3000 }));
+
+    const req = buildRequest({
+      billingId: BILLING_UUID,
+      paymentAmount: 10000,
+      paymentDate: '2026-10-01',
+      seenRemaining: 10000,
+    });
+    await settleRemaining(req as Request, res as Response, next);
+
+    expect((next as jest.Mock).mock.calls[0][0].message).toBe(
+      '残額が変わっています。もう一度探してください'
+    );
+    expect(txMock.payment.create).not.toHaveBeenCalled();
+  });
+
+  it('もらった日が今日より先なら止める', async () => {
+    txMock.billing.findFirst.mockResolvedValue(billedUnpaid());
+
+    const req = buildRequest({
+      billingId: BILLING_UUID,
+      paymentAmount: 10000,
+      paymentDate: '2999-01-01',
+    });
+    await settleRemaining(req as Request, res as Response, next);
+
+    expect((next as jest.Mock).mock.calls[0][0].message).toBe(
+      'もらった日は今日以前にしてください。これからの日は次に払う日に書いてください'
+    );
+    expect(txMock.payment.create).not.toHaveBeenCalled();
+  });
+
+  it('使用料の0円は止める', async () => {
+    txMock.billing.findFirst.mockResolvedValue(billedUnpaid({ category: 'usage_fee' }));
+
+    const req = buildRequest({
+      billingId: BILLING_UUID,
+      paymentAmount: 0,
+    });
+    await settleRemaining(req as Request, res as Response, next);
+
+    expect((next as jest.Mock).mock.calls[0][0].message).toBe('今回の金額は1円以上にしてください');
+    expect(txMock.payment.create).not.toHaveBeenCalled();
+    expect(txMock.billing.update).not.toHaveBeenCalled();
+  });
+
+  it('使用料に次の日が付いていると止める', async () => {
+    txMock.billing.findFirst.mockResolvedValue(billedUnpaid({ category: 'usage_fee' }));
+
+    const req = buildRequest({
+      billingId: BILLING_UUID,
+      paymentAmount: 3000,
+      paymentDate: '2026-10-01',
+      nextPaymentDate: '2026-12-01',
+    });
+    await settleRemaining(req as Request, res as Response, next);
+
+    expect((next as jest.Mock).mock.calls[0][0].message).toBe('この種類には次に払う日を残せません');
+    expect(txMock.payment.create).not.toHaveBeenCalled();
+  });
+
+  it('使用料の一部は次の日なしで入金できる', async () => {
+    txMock.billing.findFirst.mockResolvedValue(billedUnpaid({ category: 'usage_fee' }));
+    txMock.payment.create.mockResolvedValue(buildPaymentRow({ payment_amount: 3000 }));
+
+    const req = buildRequest({
+      billingId: BILLING_UUID,
+      paymentAmount: 3000,
+      paymentDate: '2026-10-01',
+    });
+    await settleRemaining(req as Request, res as Response, next);
+
+    expect(txMock.payment.create).toHaveBeenCalled();
+    expect(txMock.billing.update).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({
+      success: true,
+      data: { remainingAmount: 7000, nextPaymentDate: null },
+    });
   });
 });
