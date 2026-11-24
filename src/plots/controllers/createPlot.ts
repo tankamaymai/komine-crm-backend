@@ -29,6 +29,7 @@ import {
 } from '../../collective-burials/utils';
 import prisma from '../../db/prisma';
 import { ValidationError, NotFoundError } from '../../middleware/errorHandler';
+import { allowDuplicateAcceptance, assertAcceptanceNumberAvailable } from '../services/acceptanceNumberCheck';
 import { assertAssignableCustomer } from '../services/assertAssignableCustomer';
 import { createAdditionalPlotsForCustomer } from '../services/createAdditionalPlots';
 import {
@@ -61,6 +62,13 @@ export async function createPlotCore(
   if (!input.contractPlot.contractAreaSqm || input.contractPlot.contractAreaSqm <= 0) {
     throw new ValidationError('契約面積は0より大きい値を指定してください');
   }
+
+  await assertAcceptanceNumberAvailable(
+    tx,
+    input.saleContract.acceptanceNumber,
+    [],
+    allowDuplicateAcceptance(input)
+  );
 
   // 1. PhysicalPlotの取得または作成
   let physicalPlot;

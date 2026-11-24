@@ -16,6 +16,7 @@ import {
 } from '../utils';
 import prisma from '../../db/prisma';
 import { ValidationError } from '../../middleware/errorHandler';
+import { allowDuplicateAcceptance, assertAcceptanceNumberAvailable } from '../services/acceptanceNumberCheck';
 import { getRequestLogger } from '../../utils/logger';
 
 /**
@@ -45,6 +46,12 @@ export const createPlotContract = async (req: Request, res: Response): Promise<R
     // トランザクション内で契約作成
     const result = await prisma.$transaction(
       async (tx) => {
+        await assertAcceptanceNumberAvailable(
+          tx,
+          input.saleContract.acceptanceNumber,
+          [],
+          allowDuplicateAcceptance(input)
+        );
         // 契約面積の検証（#278）: tx 外で検証すると検証〜作成の間に並行リクエストが
         // 同じ空き面積を見て両方通過し過剰割当が成立するため、tx 内で検証する。
         // Serializable 分離レベルにより同一物理区画への並行契約追加は直列化される。

@@ -17,6 +17,7 @@ import {
 } from '../utils';
 import prisma from '../../db/prisma';
 import { ValidationError, NotFoundError } from '../../middleware/errorHandler';
+import { allowDuplicateAcceptance, assertAcceptanceNumberAvailable } from '../services/acceptanceNumberCheck';
 import {
   recordContractPlotUpdated,
   recordCustomerCreated,
@@ -46,6 +47,15 @@ export async function updatePlotCore(
   input: UpdatePlotRequest,
   req: Request
 ): Promise<void> {
+  if (input.saleContract?.acceptanceNumber) {
+    await assertAcceptanceNumberAvailable(
+      tx,
+      input.saleContract.acceptanceNumber,
+      [id],
+      allowDuplicateAcceptance(input)
+    );
+  }
+
   // 1. 既存のContractPlotを取得
   const existingContractPlot = await tx.contractPlot.findUnique({
     where: { id, deleted_at: null },

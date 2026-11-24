@@ -869,6 +869,9 @@ describe('Plot Validation (ContractPlot Model)', () => {
         price: 500000,
         paymentStatus: 'paid',
         customerRole: 'contractor',
+        acceptanceNumber: '200',
+        permitDate: '2024-06-02',
+        startDate: '2024-06-03',
       },
       customer: {
         name: '田中花子',

@@ -363,6 +363,34 @@ const contractPlotManagementFeeSchema = sharedManagementFeeSchema.optional().or(
  */
 const collectiveBurialSchema = sharedCollectiveBurialSchema.optional().or(z.literal(null));
 
+/** 契約として保存するとき、昔の契約登録と同じく番号と日付を必須にする */
+function requireContractIdentity(
+  saleContract: { acceptanceNumber?: string | null; permitDate?: string | null; startDate?: string | null } | undefined,
+  ctx: z.RefinementCtx
+) {
+  if (!saleContract?.acceptanceNumber?.trim()) {
+    ctx.addIssue({
+      code: 'custom',
+      message: '承諾書番号を入力してください',
+      path: ['saleContract', 'acceptanceNumber'],
+    });
+  }
+  if (!saleContract?.permitDate) {
+    ctx.addIssue({
+      code: 'custom',
+      message: '許可日を入力してください',
+      path: ['saleContract', 'permitDate'],
+    });
+  }
+  if (!saleContract?.startDate) {
+    ctx.addIssue({
+      code: 'custom',
+      message: '開始日を入力してください',
+      path: ['saleContract', 'startDate'],
+    });
+  }
+}
+
 /**
  * ContractPlot作成リクエストのバリデーションスキーマ
  */
@@ -386,6 +414,10 @@ export const createPlotSchema = z.object({
   buriedPersons: buriedPersonsSchema.optional(),
   // まとめ買いの2つ目以降の区画（任意）。無いときは今までどおり1区画の登録
   additionalPlots: additionalPlotsFieldSchema,
+  // 承諾書番号が他契約と重なっても、警告のあと本人が「このまま」と選んだとき true
+  allowDuplicateAcceptanceNumber: z.boolean().optional(),
+}).superRefine((data, ctx) => {
+  requireContractIdentity(data.saleContract, ctx);
 });
 
 /**
@@ -413,6 +445,7 @@ export const updatePlotSchema = z.object({
   collectiveBurial: collectiveBurialSchema,
   // 変更理由（#261）。本更新で記録される履歴（History.change_reason VarChar(200)）に反映する
   changeReason: z.string().trim().max(200, '変更理由は200文字以内で入力してください').optional(),
+  allowDuplicateAcceptanceNumber: z.boolean().optional(),
 });
 
 /**
@@ -428,6 +461,9 @@ export const createPlotContractSchema = z.object({
   billingInfo: contractPlotBillingInfoSchema,
   usageFee: contractPlotUsageFeeSchema,
   managementFee: contractPlotManagementFeeSchema,
+  allowDuplicateAcceptanceNumber: z.boolean().optional(),
+}).superRefine((data, ctx) => {
+  requireContractIdentity(data.saleContract, ctx);
 });
 
 /**

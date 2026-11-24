@@ -28,6 +28,7 @@ const mockPrisma: any = {
   contractPlot: {
     findMany: jest.fn(),
     findUnique: jest.fn(),
+    findFirst: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
     count: jest.fn(),
@@ -246,6 +247,7 @@ describe('Plot Controller (ContractPlot Model)', () => {
       deleted_at: null,
       is_terminated: false,
     });
+    mockPrisma.contractPlot.findFirst.mockResolvedValue(null);
     // 合祀カウントダウンの起点は「最終納骨者の埋葬日、無ければ契約日」（議事録 2026-07-21 §1）。
     // 既定は最終納骨者なし＝契約日起点。最終納骨日起点のケースは個別テストで上書きする。
     mockPrisma.buriedPerson.findFirst.mockResolvedValue(null);
