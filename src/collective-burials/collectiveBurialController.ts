@@ -56,7 +56,8 @@ export const getCollectiveBurialList = async (
     } = req.query;
 
     const pageNum = Math.max(1, parseInt(page as string, 10) || 1);
-    const limitNum = Math.min(100, Math.max(1, parseInt(limit as string, 10) || 50));
+    // 画面は年ごとに全員を並べる。50件で切ると、先の年と日付未定の人が見えなくなる。
+    const limitNum = Math.min(1000, Math.max(1, parseInt(limit as string, 10) || 50));
     const skip = (pageNum - 1) * limitNum;
 
     // 検索条件の構築
@@ -83,17 +84,28 @@ export const getCollectiveBurialList = async (
       }
     }
 
-    // 検索クエリ（顧客名、区画番号で検索）
+    // 検索クエリ（顧客名、画面に出ている区画番号で検索）
     // contractPlot フィルタは上で deleted_at:null を設定済みのため、検索条件は
     // その is 配下にマージして親契約の論理削除ガードを保持する。
-    if (search) {
+    // 表示用の番号がある区画はそれだけを見る。裏側の legacy- 番号まで見ると、
+    // 画面の「51」を探したときに、別の区画の隠れた番号へヒットしてしまう。
+    const searchTerm = (Array.isArray(search) ? search[0] : search)?.toString().trim() ?? '';
+    if (searchTerm) {
       where['contractPlot'] = {
         is: {
           deleted_at: null,
           OR: [
             {
               physicalPlot: {
-                plot_number: { contains: search as string, mode: 'insensitive' },
+                OR: [
+                  { display_number: { contains: searchTerm, mode: 'insensitive' } },
+                  {
+                    AND: [
+                      { OR: [{ display_number: null }, { display_number: '' }] },
+                      { plot_number: { contains: searchTerm, mode: 'insensitive' } },
+                    ],
+                  },
+                ],
               },
             },
             {
@@ -103,8 +115,8 @@ export const getCollectiveBurialList = async (
                   deleted_at: null,
                   customer: {
                     OR: [
-                      { name: { contains: search as string, mode: 'insensitive' } },
-                      { name_kana: { contains: search as string, mode: 'insensitive' } },
+                      { name: { contains: searchTerm, mode: 'insensitive' } },
+                      { name_kana: { contains: searchTerm, mode: 'insensitive' } },
                     ],
                   },
                 },
@@ -172,6 +184,7 @@ export const getCollectiveBurialList = async (
         capacityReachedDate: item.capacity_reached_date?.toISOString().split('T')[0] || null,
         validityPeriodYears: item.validity_period_years,
         billingScheduledDate: item.billing_scheduled_date?.toISOString().split('T')[0] || null,
+        billingScheduledDateManual: item.billing_scheduled_date_manual === true,
         billingStatus: item.billing_status,
         billingAmount: item.billing_amount,
         notes: item.notes,
@@ -273,6 +286,7 @@ export const getCollectiveBurialById = async (
         validityPeriodYears: collectiveBurial.validity_period_years,
         billingScheduledDate:
           collectiveBurial.billing_scheduled_date?.toISOString().split('T')[0] || null,
+        billingScheduledDateManual: collectiveBurial.billing_scheduled_date_manual === true,
         billingStatus: collectiveBurial.billing_status,
         billingAmount: collectiveBurial.billing_amount,
         notes: collectiveBurial.notes,
