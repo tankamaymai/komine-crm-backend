@@ -57,6 +57,7 @@ describe('collectiveBurialController — 契約者名フォールバック (issu
       capacity_reached_date: null,
       validity_period_years: 33,
       billing_scheduled_date: null,
+      billing_scheduled_date_manual: false,
       billing_status: 'pending',
       billing_amount: null,
       notes: null,
@@ -133,6 +134,68 @@ describe('collectiveBurialController — 契約者名フォールバック (issu
       const payload = responseJson.mock.calls[0][0];
       expect(payload.data.items[0].applicantName).toBe('契約花子');
       expect(payload.data.items[0].applicantNameKana).toBe('ケイヤクハナコ');
+    });
+
+    it('画面の区画番号で探し、表示番号がある区画の裏側番号は見ない', async () => {
+      mockPrisma.collectiveBurial.findMany.mockResolvedValue([]);
+      mockPrisma.collectiveBurial.count.mockResolvedValue(0);
+      mockRequest.query = { search: '51' };
+
+      await getCollectiveBurialList(
+        mockRequest as Request,
+        mockResponse as Response,
+        mockNext as NextFunction
+      );
+
+      const where = mockPrisma.collectiveBurial.findMany.mock.calls[0][0].where;
+      expect(where.contractPlot.is.OR[0].physicalPlot).toEqual({
+        OR: [
+          { display_number: { contains: '51', mode: 'insensitive' } },
+          {
+            AND: [
+              { OR: [{ display_number: null }, { display_number: '' }] },
+              { plot_number: { contains: '51', mode: 'insensitive' } },
+            ],
+          },
+        ],
+      });
+    });
+
+    it('一覧は1000件まで一度に取り、それを超える指定は1000に丸める', async () => {
+      mockPrisma.collectiveBurial.findMany.mockResolvedValue([]);
+      mockPrisma.collectiveBurial.count.mockResolvedValue(0);
+
+      mockRequest.query = { limit: '1000' };
+      await getCollectiveBurialList(
+        mockRequest as Request,
+        mockResponse as Response,
+        mockNext as NextFunction
+      );
+      expect(mockPrisma.collectiveBurial.findMany.mock.calls[0][0].take).toBe(1000);
+
+      mockRequest.query = { limit: '5000' };
+      await getCollectiveBurialList(
+        mockRequest as Request,
+        mockResponse as Response,
+        mockNext as NextFunction
+      );
+      expect(mockPrisma.collectiveBurial.findMany.mock.calls[1][0].take).toBe(1000);
+    });
+
+    it('手で入れた合祀日だと分かる印を返す', async () => {
+      const burial = buildBurial([]);
+      burial.billing_scheduled_date_manual = true;
+      mockPrisma.collectiveBurial.findMany.mockResolvedValue([burial]);
+      mockPrisma.collectiveBurial.count.mockResolvedValue(1);
+
+      await getCollectiveBurialList(
+        mockRequest as Request,
+        mockResponse as Response,
+        mockNext as NextFunction
+      );
+
+      const payload = responseJson.mock.calls[0][0];
+      expect(payload.data.items[0].billingScheduledDateManual).toBe(true);
     });
 
     it('どのロールも無い場合はnullを返す', async () => {
